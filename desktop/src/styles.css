@@ -211,7 +211,13 @@ fieldset.plain:disabled { opacity: .6; }
 .rail.s-pass { stroke: rgba(53, 200, 154, .45); }
 .rail.s-warn { stroke: rgba(245, 165, 36, .5); }
 .rail.merge { stroke-width: 1.4; }
-.rail.out { opacity: .4; }
+.rail.out { opacity: .55; }
+.arrow-head { fill: #5a616d; }
+.arrow-head.a-run { fill: var(--accent); }
+.arrow-head.a-pass { fill: var(--allow); }
+.arrow-head.a-warn { fill: var(--review); }
+.arrow-head.a-fail { fill: var(--block); }
+.arrow-head.a-allow { fill: var(--allow); } .arrow-head.a-block { fill: var(--block); } .arrow-head.a-review { fill: var(--review); }
 .rail.out.v-allow { stroke: var(--allow); } .rail.out.v-block { stroke: var(--block); } .rail.out.v-review { stroke: var(--review); }
 /* Flowing light: three dashes (tail, glow, white head) whose leading edges move 0 → 1.6 together */
 .comet path { fill: none; stroke-linecap: round; animation-timing-function: cubic-bezier(.45, 0, .55, 1); animation-fill-mode: both; }

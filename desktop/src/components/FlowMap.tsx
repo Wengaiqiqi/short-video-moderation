@@ -143,8 +143,9 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
     const paths = {
       inTop: `M${edgeX(y.top) + 2},${y.top} L${xIn},${y.top}`,
       inBot: `M${edgeX(y.bot) + 2},${y.bot} L${xIn},${y.bot}`,
-      mergeTop: `M${xIn},${y.top} C${xIn - bulge},${y.top} ${xIn - bulge},${y.mid - 8} ${xIn},${y.mid - 8}`,
-      mergeBot: `M${xIn},${y.bot} C${xIn - bulge},${y.bot} ${xIn - bulge},${y.mid + 8} ${xIn},${y.mid + 8}`,
+      // Merge arcs leave the side boxes just beside the incoming arrow so the two never overlap.
+      mergeTop: `M${xIn},${y.top + 11} C${xIn - bulge},${y.top + 11} ${xIn - bulge},${y.mid - 8} ${xIn},${y.mid - 8}`,
+      mergeBot: `M${xIn},${y.bot - 11} C${xIn - bulge},${y.bot - 11} ${xIn - bulge},${y.mid + 8} ${xIn},${y.mid + 8}`,
       out: Object.fromEntries(VERDICTS.map(v => {
         const b = bins[v.id], by = b.y + b.h / 2;
         return [v.id, `M${xOut},${y.mid} C${xOut + 70},${y.mid} ${b.x - 70},${by} ${b.x - 2},${by}`];
@@ -168,17 +169,23 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
           <feGaussianBlur stdDeviation="3.2" result="blur" />
           <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
+        {/* Arrowheads, one per rail colour; the tip sits exactly at the end of the line */}
+        {["wait", "run", "pass", "warn", "fail", "skip", "allow", "block", "review"].map(k =>
+          <marker key={k} id={`arrow-${k}`} viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="8" markerHeight="8"
+            markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0,0.8 L10,5 L0,9.2 L2.6,5 Z" className={`arrow-head a-${k}`} />
+          </marker>)}
       </defs>
       <path className="disc-halo" d={`M${geometry.cx},${geometry.cy - geometry.R - 14} A${geometry.R + 14},${geometry.R + 14} 0 0 1 ${geometry.cx},${geometry.cy + geometry.R + 14}`} />
       <path className="disc-edge" d={`M${geometry.cx},${geometry.cy - geometry.R} A${geometry.R},${geometry.R} 0 0 1 ${geometry.cx},${geometry.cy + geometry.R}`} />
       {geometry.slots.map((s, i) => <rect key={i} className="slot" x={s.x} y={s.y} width={geometry.size} height={geometry.size} rx={2} />)}
 
       {/* Rails: disc → 画面切分 / 语音识别 (in parallel) → merge into 分类判断 → three bins */}
-      <path className={`rail s-${state.frames}`} d={geometry.paths.inTop} />
-      <path className={`rail s-${state.asr}`} d={geometry.paths.inBot} />
-      <path className={`rail merge s-${state.classify}`} d={geometry.paths.mergeTop} />
-      <path className={`rail merge s-${state.classify}`} d={geometry.paths.mergeBot} />
-      {VERDICTS.map(v => <path key={v.id} className={`rail out v-${v.id}`} d={geometry.paths.out[v.id]} />)}
+      <path className={`rail s-${state.frames}`} d={geometry.paths.inTop} markerEnd={`url(#arrow-${state.frames})`} />
+      <path className={`rail s-${state.asr}`} d={geometry.paths.inBot} markerEnd={`url(#arrow-${state.asr})`} />
+      <path className={`rail merge s-${state.classify}`} d={geometry.paths.mergeTop} markerEnd={`url(#arrow-${state.classify})`} />
+      <path className={`rail merge s-${state.classify}`} d={geometry.paths.mergeBot} markerEnd={`url(#arrow-${state.classify})`} />
+      {VERDICTS.map(v => <path key={v.id} className={`rail out v-${v.id}`} d={geometry.paths.out[v.id]} markerEnd={`url(#arrow-${v.id})`} />)}
 
       <g>
         {/* Ambient light while work is in a stage */}
