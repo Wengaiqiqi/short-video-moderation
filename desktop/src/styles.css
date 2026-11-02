@@ -306,7 +306,6 @@ fieldset.plain:disabled { opacity: .55; }
 .stage-title { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; overflow: hidden; }
 .stage-title b { font-size: 16px; font-weight: 600; letter-spacing: .06em; }
 .stage-title em { font: normal 9.5px var(--mono); letter-spacing: .18em; color: var(--note); }
-.stage-sub { margin-top: 2px; font: 10.5px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stage-state { flex: none; display: flex; align-items: center; gap: 6px; font: 600 11px var(--mono); color: var(--dot-idle); }
 .stage-state i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .stage.s-run .stage-state { color: var(--accent); }

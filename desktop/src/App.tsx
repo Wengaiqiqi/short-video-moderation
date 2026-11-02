@@ -171,9 +171,7 @@ export default function App() {
         <header className="panel-head">
           <span><b>视频流向</b>{preview && <span className="tag demo">演示数据</span>}</span>
         </header>
-        <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin}
-          meta={{ interval: form.interval, segmentSeconds: form.seconds, cloud: cloudAsr,
-                  asr: cloudAsr ? "MiMo" : `Whisper ${settings?.asr_model ?? ""}` }} />
+        <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin} />
       </section>
     </div>
     <div className="dock">
@@ -187,7 +185,8 @@ export default function App() {
         onReview={(id, decision) => { void m.setReview(id, decision); }}
         onRetryFailed={id => { const run = runConfig(); if (run) m.retryFailed(id, run); }}
         onRerun={(id, how) => { const run = runConfig(how); if (run) m.reevaluate(id, run); }}
-        onCancel={m.cancelVideo} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }} />
+        onCancel={m.cancelVideo} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }}
+        onReveal={async path => { const answer = await m.request("reveal_report", { report_path: path }); return answer.error ? String(answer.error) : undefined; }} />
       <Detail video={video} videos={videos} providers={providers} segment={segment} cloudAsr={cloudAsr} settings={settings}
         request={m.request} onOpenEvidence={() => setEvidenceOpen(true)} onCalibrate={() => setCalibrating(true)} />
     </div>

@@ -11,7 +11,6 @@ interface Props {
   onSelect: (id: string | null) => void;
   bin: Verdict | null;
   onBin: (bin: Verdict | null) => void;
-  meta: { interval: number; segmentSeconds: number; asr: string; cloud: boolean };
 }
 
 /** A finished video: tile → both stage lines → merge into 分类判断 → its bin. */
@@ -69,7 +68,7 @@ function Comet({ d, tone, delay = 0, duration, loop = false, width = 1 }: {
 
 const STATE_TEXT: Record<StageState, string> = { wait: "等待", run: "进行中", pass: "完成", warn: "完成（有失败）", fail: "失败", skip: "跳过" };
 
-export default function FlowMap({ videos, stagesById, selected, onSelect, bin, onBin, meta }: Props) {
+export default function FlowMap({ videos, stagesById, selected, onSelect, bin, onBin }: Props) {
   const [box, { width: W, height: H }] = useSize<HTMLDivElement>();
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(t => window.clearTimeout(t)), []);
@@ -247,12 +246,9 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
 
       {/* Stages: 画面切分 (top) and 语音识别 (bottom) run in parallel and merge into 分类判断 (middle) */}
       {[
-        { key: "frames" as const, no: "01", zh: "画面切分", y: geometry.y.top, tall: false,
-          sub: `${meta.interval}s · 场景补帧`, count: preparing },
-        { key: "classify" as const, no: "03", zh: "分类判断", y: geometry.y.mid, tall: true,
-          sub: `≤${meta.segmentSeconds}s 窗口 · 取最严`, count: classifying },
-        { key: "asr" as const, no: "02", zh: "语音识别", y: geometry.y.bot, tall: false,
-          sub: meta.cloud ? `${meta.asr} · 静音切分` : meta.asr, count: asrBusy },
+        { key: "frames" as const, no: "01", zh: "画面切分", y: geometry.y.top, tall: false, count: preparing },
+        { key: "classify" as const, no: "03", zh: "分类判断", y: geometry.y.mid, tall: true, count: classifying },
+        { key: "asr" as const, no: "02", zh: "语音识别", y: geometry.y.bot, tall: false, count: asrBusy },
       ].map(stage => {
         const s = state[stage.key];
         return <div key={stage.key} className={`stage s-${s}${stage.tall ? " hub" : ""}${s === "run" && stage.tall ? " hot" : ""}${geometry.midW < 230 ? " compact" : geometry.midW < 330 ? " snug" : ""}`}
@@ -260,7 +256,6 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
           <span className="stage-no">{stage.no}</span>
           <div className="stage-body">
             <div className="stage-title"><b>{stage.zh}</b></div>
-            <div className="stage-sub">{stage.sub}</div>
           </div>
           <span className="stage-state" title={STATE_TEXT[s]}><i />{s === "run" ? stage.count : ""}</span>
         </div>;

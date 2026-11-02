@@ -233,6 +233,16 @@ class LibraryTests(unittest.TestCase):
         path.write_text('文件,标签\nD:\\videos\\a.mp4,拦截\nb.mp4,通过\nc.mp4,不确定\n', encoding='utf-8-sig')
         self.assertEqual(library.read_labels(path), [{'name': 'a.mp4', 'blocked': True}, {'name': 'b.mp4', 'blocked': False}])
 
+    def test_reports_are_revealed_only_from_review_folders(self):
+        self.assertEqual(library.reveal_command('D:/results/moderation-a/evaluation-b/report.json', 'win32'),
+                         'explorer /select,"' + os.path.normpath('D:/results/moderation-a/evaluation-b/report.json') + '"')
+        self.assertEqual(library.reveal_command('/r/moderation-a/evaluation-b/report.json', 'darwin')[:2], ['open', '-R'])
+        self.assertEqual(library.reveal_command('/r/moderation-a/evaluation-b/report.json', 'linux'), ['xdg-open', '/r/moderation-a/evaluation-b'])
+        with self.assertRaises(ValueError):
+            library.reveal_report(self.root / 'notes.txt')
+        with self.assertRaises(FileNotFoundError):
+            library.reveal_report(self.root / 'moderation-x' / 'evaluation-y' / 'report.json')
+
     def test_fingerprint_follows_content(self):
         a, b = self.root / 'a.mp4', self.root / 'b.mp4'
         a.write_bytes(b'x' * 10)

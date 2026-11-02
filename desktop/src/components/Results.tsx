@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { openPath } from "@tauri-apps/plugin-opener";
 import {
   VERDICTS, VERDICT_ZH, agreement, categoryLabel, disagreements, errorText, finalVerdict, fmtDuration, fmtTime, isFailed, isSkipped,
   pad2, peakOf, providerLabel, providersOf, segmentsOf, tally, thresholds, verdictOf, visibleProviders,
@@ -43,6 +42,8 @@ interface Props {
   onReview: (id: string, decision: ReviewDecision["decision"] | null) => void;
   onRetryFailed: (id: string) => void; onRerun: (id: string, how: Rerun) => void;
   onCancel: (id: string) => void; onRequeue: (id: string) => void;
+  /** Show the report in the file manager; resolves to an error message, if any. */
+  onReveal: (reportPath: string) => Promise<string | undefined>;
 }
 
 /** Finished videos (filtered by bin); opening one shows its per-window verdicts. */
@@ -103,7 +104,7 @@ function VideoList({ videos, onVideo, bin, onBin, scope, onScope, onExport, onRe
   </section>;
 }
 
-function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, preview, onReview, onRetryFailed, onRerun, onCancel, onRequeue }: Props & { video: VideoItem }) {
+function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, preview, onReview, onRetryFailed, onRerun, onCancel, onRequeue, onReveal }: Props & { video: VideoItem }) {
   const [error, setError] = useState("");
   const [onlySplit, setOnlySplit] = useState(false);
   const [rerun, setRerun] = useState<Rerun | null>(null);
@@ -131,8 +132,8 @@ function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, p
           {split.size > 0 && <button type="button" className={onlySplit ? "on" : "c-review"} aria-pressed={onlySplit}
             onClick={() => setOnlySplit(x => !x)} title="只看两组模型结论不一致的片段">分歧 {split.size}</button>}
         </span>}
-        {report && <button type="button" className="link-button" disabled={preview} title={preview ? "演示模式没有报告文件" : report.report_path}
-          onClick={() => { setError(""); void openPath(report.report_path).catch(e => setError(String(e))); }}>报告 ↗</button>}
+        {report && <button type="button" className="link-button" disabled={preview} title={preview ? "演示模式没有报告文件" : `在文件夹中显示：${report.report_path}`}
+          onClick={() => { setError(""); void onReveal(report.report_path).then(message => setError(message ?? "")); }}>报告 ↗</button>}
       </span>
     </header>
     {/* Actions: final decision, retries and re-runs on the prepared inputs */}

@@ -59,7 +59,7 @@ tests/              核心、ASR 与 worker 回归测试
 
 界面还会发送 `{"action":"thumbnail","payload":{"id":"…","video_path":"…","ffmpeg_path":null}}` 获取封面（返回 `video.thumbnail`，含 `data_url` 或 `error`），以及 `{"action":"list_videos","payload":{"directory":"…"}}` 列出文件夹中的视频（返回 `videos.listed`，不递归）。批量审核由界面排队，界面按「并发视频」（默认 11，全局唯一的并发设置，也是云端语音与每组模型的同时请求数上限）并行发送 `moderation_start`，每个任务带 `job_id`，后台所有事件都回传 `job_id` 与 `video_path`；后台最多同时运行 32 个任务，超出返回 `moderation.rejected`。
 
-其他命令（均带 `request_id`，回复事件带同一 `request_id`）：`moderation_evaluate`（基于已有 `inputs.json` 重新审核；`retry_failed: true` 时只重发失败窗口并合并为新报告）、`moderation_cancel`（`job_id` 省略则取消全部，任务结束时发 `moderation.cancelled`）、`segment_evidence`、`segment_clip`、`save_review`、`list_history`、`save_settings`、`export_csv`、`read_labels`、`split_video`。`thumbnail` 的回复还带 `duration_sec`。结果目录下的 `index.json` 记录「文件指纹 + 配置签名 → 报告」，用于跳过已审过的视频；每个任务目录的 `review.json` 保存人工终判。策略类别可带 `label`（中文名）、`review_threshold`、`block_threshold`（覆盖全局阈值）；可选类别库在 `defaults/categories.json`。
+其他命令（均带 `request_id`，回复事件带同一 `request_id`）：`moderation_evaluate`（基于已有 `inputs.json` 重新审核；`retry_failed: true` 时只重发失败窗口并合并为新报告）、`moderation_cancel`（`job_id` 省略则取消全部，任务结束时发 `moderation.cancelled`）、`segment_evidence`、`segment_clip`、`save_review`、`list_history`、`save_settings`、`export_csv`、`read_labels`、`split_video`、`reveal_report`（在系统文件管理器中显示报告，只接受 `moderation-*/evaluation-*/report.json` 路径）。`thumbnail` 的回复还带 `duration_sec`。结果目录下的 `index.json` 记录「文件指纹 + 配置签名 → 报告」，用于跳过已审过的视频；每个任务目录的 `review.json` 保存人工终判。策略类别可带 `label`（中文名）、`review_threshold`、`block_threshold`（覆盖全局阈值）；可选类别库在 `defaults/categories.json`。
 
 界面根据 `moderation.progress` 的文字推断阶段：`并行处理…` 为抽帧与转写，`按讲话时间…` 为窗口对齐，`语音识别 i/N` 为云端转写进度，`<provider>: 完成 i/N` 为逐段推理进度（两组模型同时推进）。修改这些文字时需同步 `desktop/src/useModeration.ts`。
 
