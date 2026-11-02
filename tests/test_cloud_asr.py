@@ -93,6 +93,34 @@ class MimoASRTests(unittest.TestCase):
             self.assertTrue(extracted_paths)
             self.assertTrue(all(not path.exists() for path in extracted_paths))
 
+    def test_refusal_notice_is_a_failed_block_not_speech(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            video = root / "clip.mp4"
+            video.write_bytes(b"fake-video")
+
+            def extractor(_: Path, __: float, ___: float, output: Path) -> None:
+                output.write_bytes(b"R" * 100)
+
+            def requester(audio_path: Path) -> str:
+                if audio_path.stem == "block_0002":
+                    return "The request was rejected because it was considered high risk"
+                return "正常讲话"
+
+            blocks = [
+                {"segment_id": 1, "start_sec": 0.0, "end_sec": 5.0},
+                {"segment_id": 2, "start_sec": 5.0, "end_sec": 10.0},
+            ]
+            transcripts, statistics = transcribe_blocks_with_mimo(
+                video, blocks, settings=MimoASRSettings(max_concurrency=2), api_key="test-key",
+                requester=requester, audio_extractor=extractor,
+            )
+            self.assertEqual(transcripts[0]["speech_text"], "正常讲话")
+            self.assertEqual(transcripts[1]["asr_status"], "failed")
+            self.assertEqual(transcripts[1]["speech_text"], "")
+            self.assertEqual(transcripts[1]["asr_error"], "MimoRefusedError")
+            self.assertEqual(statistics["failed_block_count"], 1)
+
     def test_long_block_is_split_and_merged_in_time_order(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -258,6 +258,15 @@ def _request_with_retries(
 
 
 _WORD = re.compile(r"\w")
+# MiMo answers some audio with this notice instead of a transcript; it is not speech.
+_REFUSAL = re.compile(r"the request was rejected because it was considered high risk", re.IGNORECASE)
+
+
+class MimoRefusedError(UserFacingError):
+    """The service declined to transcribe a chunk; its speech is unknown, not empty."""
+
+    def __init__(self):
+        super().__init__("云端语音识别拒绝转写这段音频（服务判定为高风险）")
 
 
 def clean_asr_text(text: str) -> str:
@@ -460,7 +469,11 @@ def transcribe_blocks_with_mimo(
             try:
                 actual_extractor(video, chunk_start, chunk_end, audio_path)
                 audio_size += audio_path.stat().st_size
-                text = clean_asr_text(request(audio_path))
+                raw = request(audio_path)
+                if _REFUSAL.search(raw or ""):
+                    # The block is reported as failed, so its windows are held for review.
+                    raise MimoRefusedError()
+                text = clean_asr_text(raw)
                 chunks.append(MimoChunkResult(start_sec=chunk_start, end_sec=chunk_end, text=text))
             finally:
                 try:
