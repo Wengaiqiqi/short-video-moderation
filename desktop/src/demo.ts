@@ -11,9 +11,8 @@ export const DEMO_SETTINGS: Settings = {
   llm_base_url: "https://api.openai.com/v1", llm_model: "gpt-4o-mini",
   asr_engine: "mimo-cloud", asr_model: "small", asr_language: "zh", asr_device: "cpu", asr_compute_type: "int8",
   mimo_base_url: "https://api.xiaomimimo.com/v1", mimo_model: "mimo-v2.5-asr",
-  asr_concurrency: 8, model_concurrency: 8, video_concurrency: 11,
+  video_concurrency: 11,
   skip_reviewed: true, stop_on_block: false, split_long_videos: true, remember_keys: false, keychain_available: false,
-  jev_price_per_mtok: 0, llm_price_per_mtok: 0, asr_price_per_min: 0,
   ffmpeg_path: "", ffprobe_path: "",
 };
 

@@ -153,7 +153,7 @@ export default function App() {
         onCancel={m.cancelVideo} onCancelAll={m.cancelAll} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }} />
       <section className="panel flow-panel">
         <header className="panel-head">
-          <span><b>SIGNAL MAP</b>{preview && <span className="tag demo">DEMO</span>}</span>
+          <span><b>视频流向</b>{preview && <span className="tag demo">DEMO</span>}</span>
         </header>
         <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin}
           meta={{ interval: form.interval, segmentSeconds: form.seconds, cloud: cloudAsr,

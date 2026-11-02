@@ -216,6 +216,13 @@ class LibraryTests(unittest.TestCase):
             saved = (self.root / 'settings.json').read_text(encoding='utf-8')
             self.assertNotIn('secret', saved)
             self.assertEqual(desktop.initial_settings()['video_concurrency'], 5)
+            # One knob: the video concurrency also sets the shared ASR and model request limits.
+            with patch.dict(os.environ, {'TYPESAFE_API_KEY': 'k', 'LLM_API_KEY': 'k'}):
+                desktop._context({'settings': {'video_concurrency': 5, 'asr_concurrency': 2}})
+            from short_video_moderation.limits import ASR_REQUESTS, MODEL_REQUESTS
+            self.assertEqual((ASR_REQUESTS.limit, MODEL_REQUESTS['jev'].limit, MODEL_REQUESTS['openai'].limit), (5, 5, 5))
+            library.save_settings({'asr_concurrency': 3, 'jev_price_per_mtok': 1})
+            self.assertNotIn('asr_concurrency', desktop.initial_settings())
         path = library.export_csv(self.root / 'out.csv', [['视频', '结论'], ['a.mp4', '拦截']])
         self.assertTrue(Path(path).read_bytes().startswith(b'\xef\xbb\xbf'))
         with self.assertRaises(ValueError):

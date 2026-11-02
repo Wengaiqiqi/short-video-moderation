@@ -59,7 +59,7 @@ function VideoList({ videos, onVideo, bin, onBin, scope, onScope, onExport, onRe
   const { finished, rows } = listedVideos(videos, scope, bin);
   const historyCount = videos.filter(v => v.history).length;
   return <section className="panel dock-panel">
-    <header className="panel-head"><span><b>RESULTS</b></span>
+    <header className="panel-head"><span><b>视频结果</b></span>
       <span className="head-tools">
         <span className="chips" role="group" aria-label="范围">
           <button type="button" className={scope === "batch" ? "on" : undefined} aria-pressed={scope === "batch"} onClick={() => onScope("batch")}>本批</button>

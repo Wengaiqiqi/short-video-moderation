@@ -46,17 +46,24 @@ def default_settings():
                 asr_engine='mimo-cloud', asr_model='small', asr_language='zh',
                 asr_device='cpu', asr_compute_type='int8',
                 mimo_base_url='https://api.xiaomimimo.com/v1', mimo_model='mimo-v2.5-asr',
-                # Request limits are shared by all videos running at the same time.
-                asr_concurrency=8, model_concurrency=8, video_concurrency=11,
+                # One concurrency setting: N videos at a time, and at most N cloud ASR requests and N
+                # requests per model group in flight across all of them.
+                video_concurrency=11,
                 skip_reviewed=True, stop_on_block=False, remember_keys=False, split_long_videos=True,
-                # Optional prices for the cost estimate: per million tokens, per audio minute.
-                jev_price_per_mtok=0, llm_price_per_mtok=0, asr_price_per_min=0,
                 policy=defaults['policy'], ffmpeg_path='', ffprobe_path='')
+
+
+RETIRED_SETTINGS = ('asr_concurrency', 'model_concurrency', 'jev_price_per_mtok', 'llm_price_per_mtok', 'asr_price_per_min')
+
+
+def concurrency(settings):
+    """The single, global concurrency: videos at once, and the request limit for ASR and each model group."""
+    return _bounded(settings.get('video_concurrency'), 1, 32, 11)
 
 
 def initial_settings():
     """Defaults, overlaid with the settings saved last time (never keys), plus keychain status."""
-    settings = {**default_settings(), **load_saved_settings()}
+    settings = {k: v for k, v in {**default_settings(), **load_saved_settings()}.items() if k not in RETIRED_SETTINGS}
     try:
         validate_policy(settings['policy'])
     except (KeyError, TypeError, ValueError):
@@ -71,7 +78,8 @@ def transcription_config(settings):
         language=settings.get('asr_language') or None,
         device=settings.get('asr_device', 'cpu'), compute_type=settings.get('asr_compute_type', 'int8'),
         mimo_base_url=settings['mimo_base_url'], mimo_model=settings['mimo_model'],
-        mimo_max_concurrency=_bounded(settings.get('asr_concurrency'), 1, 10, 3),
+        # Per-video worker threads; the shared ASR limit still caps the total across videos.
+        mimo_max_concurrency=min(10, concurrency(settings)),
         ffmpeg_path=settings.get('ffmpeg_path') or None,
     )
     config.validate()
@@ -125,9 +133,10 @@ def resolve_policy(settings):
 def _context(payload, provider_choice=None):
     """Settings, provider configs, keys and policy for one job; also applies the shared request limits."""
     settings = {**default_settings(), **payload.get('settings', {})}
-    ASR_REQUESTS.set_limit(_bounded(settings.get('asr_concurrency'), 1, 32, 8))
+    limit = concurrency(settings)
+    ASR_REQUESTS.set_limit(limit)
     for limiter in MODEL_REQUESTS.values():
-        limiter.set_limit(_bounded(settings.get('model_concurrency'), 1, 64, 8))
+        limiter.set_limit(limit)
     selected = provider_choice or payload.get('provider', 'both')
     modality = payload.get('modality', 'multimodal')
     if selected not in ('both', 'jev', 'openai') or modality not in ('multimodal', 'visual', 'text'):

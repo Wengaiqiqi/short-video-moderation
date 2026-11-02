@@ -56,7 +56,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   height: 38px; padding: 0 14px;
   font: 11px var(--mono); letter-spacing: .06em; color: var(--muted); text-transform: uppercase; white-space: nowrap;
 }
-.panel-head b { color: var(--text); font-weight: 700; letter-spacing: .12em; }
+.panel-head b { color: var(--text); font: 600 13px var(--sans); letter-spacing: .06em; }
 .panel-head > span:first-child { display: flex; align-items: center; gap: 4px; }
 .panel-head .meta { overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0; }
 .meta { color: var(--muted); font: 11px var(--mono); }
@@ -483,7 +483,7 @@ tbody tr.split td:first-child { box-shadow: inset 3px 0 0 var(--review); }
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(3, 4, 6, .72); backdrop-filter: blur(4px); }
 .modal { display: flex; flex-direction: column; width: min(1180px, 100%); max-height: 100%; border-radius: 16px; background: var(--surface); box-shadow: 0 24px 80px rgba(0, 0, 0, .6); overflow: hidden; }
 .modal-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 14px 18px; font: 11px var(--mono); letter-spacing: .06em; color: var(--muted); }
-.modal-head b { color: var(--text); letter-spacing: .12em; }
+.modal-head b { color: var(--text); font: 600 14px var(--sans); letter-spacing: .06em; }
 .modal-head .head-tools { margin-left: auto; }
 .modal-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; padding: 0 18px 18px; min-height: 0; overflow: auto; }
 .stage-view { min-width: 0; }

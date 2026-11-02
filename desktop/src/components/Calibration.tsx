@@ -42,7 +42,7 @@ export default function Calibration({ videos, policy, onApply, onImport, onClose
 
   return <div className="modal-backdrop" onClick={onClose}>
     <div className="modal calibration" role="dialog" aria-modal="true" aria-label="阈值校准" onClick={e => e.stopPropagation()}>
-      <header className="modal-head"><b>CALIBRATION</b><span className="meta">阈值校准</span>
+      <header className="modal-head"><b>阈值校准</b>
         <span className="head-tools"><button type="button" className="icon-button" aria-label="关闭" onClick={onClose}>×</button></span></header>
       <div className="calib-top">
         <span>标注 {samples.length} 个（应拦截 {positives}）</span>

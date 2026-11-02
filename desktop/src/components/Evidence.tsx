@@ -115,7 +115,7 @@ export function EvidenceModal({ video, segments, segment, providers, request, on
   return <div className="modal-backdrop" onClick={onClose}>
     <div className="modal evidence-modal" role="dialog" aria-modal="true" aria-label={`片段 ${pad2(segment.id)} 证据`} onClick={e => e.stopPropagation()}>
       <header className="modal-head">
-        <b>SEG {pad2(segment.id)}</b><span className="meta">{video.name} · {fmtTime(segment.start + offset)}–{fmtTime(segment.end + offset)}</span>
+        <b>片段 {pad2(segment.id)}</b><span className="meta">{video.name} · {fmtTime(segment.start + offset)}–{fmtTime(segment.end + offset)}</span>
         <span className="head-tools">
           <button type="button" className="link-button" disabled={index <= 0} onClick={() => onSegment(segments[index - 1].id)}>← 上一段</button>
           <button type="button" className="link-button" disabled={index + 1 >= segments.length} onClick={() => onSegment(segments[index + 1].id)}>下一段 →</button>

@@ -43,12 +43,12 @@ export default function TaskPanel(props: Props) {
   if (collapsed) {
     return <aside className="panel task-rail">
       <button type="button" className="rail-button" onClick={() => onCollapse(false)} aria-label="展开任务配置" title="展开任务配置">»</button>
-      <span className="rail-text">TASK · 任务配置 · 排队 {queued}</span>
+      <span className="rail-text">任务配置 · 排队 {queued}</span>
     </aside>;
   }
   return <aside className="panel task-panel">
     <header className="panel-head">
-      <span><b>TASK</b></span>
+      <span><b>任务</b></span>
       <button type="button" className="icon-button" onClick={() => onCollapse(true)} aria-label="收起任务配置" title="收起">«</button>
     </header>
     <div className="tabs" role="tablist" aria-label="配置分组">
@@ -83,7 +83,7 @@ export default function TaskPanel(props: Props) {
             </ol>}
             {queued > 1 && <button type="button" className="link-button" onClick={props.onClearQueued}>清空排队</button>}
             {/* Can be changed while the queue runs; takes effect as videos finish */}
-            {settings && <label className="field inline-field">并发视频
+            {settings && <label className="field inline-field" title="同时处理的视频数；云端语音与每组模型的同时请求数上限也取这个值">并发视频
               <span className="stepper">
                 <button type="button" aria-label="减少并发" onClick={() => setSettings({ ...settings, video_concurrency: Math.max(1, (settings.video_concurrency ?? 11) - 1) })}>−</button>
                 <input type="number" min={1} max={32} step={1} value={settings.video_concurrency ?? 11}

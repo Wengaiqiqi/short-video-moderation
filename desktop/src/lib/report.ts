@@ -209,29 +209,23 @@ export function tokensOf(usage?: Record<string, number>) {
   return (usage.input_tokens ?? usage.prompt_tokens ?? 0) + (usage.output_tokens ?? usage.completion_tokens ?? 0);
 }
 
-export interface Cost { tokens: Record<string, number>; asrSeconds: number; amount: number | null }
-/** Tokens per provider, uploaded ASR seconds and (when prices are set) an estimated amount. */
-export function costOf(report: ModerationReport | null | undefined,
-                       prices: { jev?: number; openai?: number; asrPerMin?: number }): Cost {
+export interface Cost { tokens: Record<string, number>; asrSeconds: number }
+/** Tokens per provider and uploaded ASR seconds of one report. */
+export function costOf(report: ModerationReport | null | undefined): Cost {
   const tokens: Record<string, number> = {};
   for (const [provider, data] of Object.entries(report?.providers ?? {})) {
     tokens[provider] = tokensOf(data.usage) || data.segments.reduce((a, r) => a + tokensOf(r.usage), 0);
   }
-  const asrSeconds = report?.asr_statistics?.uploaded_seconds ?? 0;
-  const priced = (prices.jev ?? 0) > 0 || (prices.openai ?? 0) > 0 || (prices.asrPerMin ?? 0) > 0;
-  const amount = priced ? (tokens.jev ?? 0) / 1e6 * (prices.jev ?? 0) + (tokens.openai ?? 0) / 1e6 * (prices.openai ?? 0)
-    + asrSeconds / 60 * (prices.asrPerMin ?? 0) : null;
-  return { tokens, asrSeconds, amount };
+  return { tokens, asrSeconds: report?.asr_statistics?.uploaded_seconds ?? 0 };
 }
 export function addCosts(costs: Cost[]): Cost {
   const tokens: Record<string, number> = {};
-  let asrSeconds = 0, amount: number | null = null;
+  let asrSeconds = 0;
   for (const c of costs) {
     for (const [k, v] of Object.entries(c.tokens)) tokens[k] = (tokens[k] ?? 0) + v;
     asrSeconds += c.asrSeconds;
-    if (c.amount != null) amount = (amount ?? 0) + c.amount;
   }
-  return { tokens, asrSeconds, amount };
+  return { tokens, asrSeconds };
 }
 export function fmtTokens(n: number) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n));

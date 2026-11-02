@@ -5,17 +5,13 @@ export interface Settings {
   asr_engine: "faster-whisper" | "mimo-cloud";
   asr_model: string; asr_language: string; asr_device: string; asr_compute_type: string;
   mimo_base_url: string; mimo_model: string; asr_api_key?: string;
-  /** Request limits shared by every video running at the same time. */
-  asr_concurrency: number; model_concurrency: number;
-  /** How many videos are processed at once (default 11). */
+  /** The one global concurrency: videos at once, and the ASR / per-model request limit (default 11). */
   video_concurrency: number;
   ffmpeg_path: string; ffprobe_path: string;
   /** Reuse an identical earlier review; stop sending windows once one is blocked; split videos over 10 min. */
   skip_reviewed?: boolean; stop_on_block?: boolean; split_long_videos?: boolean;
   /** Save typed keys in the system keychain (backend only reports which keys are stored). */
   remember_keys?: boolean; keychain_available?: boolean; stored_keys?: Record<string, boolean>;
-  /** Optional prices for the cost estimate. */
-  jev_price_per_mtok?: number; llm_price_per_mtok?: number; asr_price_per_min?: number;
   policy?: ModerationPolicy; category_presets?: Record<string, CategoryRule>;
 }
 export interface CategoryRule {

@@ -136,8 +136,7 @@ export function useModeration() {
       case "worker.ready":
         if (payload.settings) {
           const incoming = payload.settings;
-          setSettings(s => s ?? { ...incoming, video_concurrency: incoming.video_concurrency ?? DEFAULT_VIDEO_CONCURRENCY,
-                                  model_concurrency: incoming.model_concurrency ?? 8 });
+          setSettings(s => s ?? { ...incoming, video_concurrency: incoming.video_concurrency ?? DEFAULT_VIDEO_CONCURRENCY });
         }
         setEngine("ready"); setMessage("就绪");
         append("ok", "ENGINE", preview ? "浏览器预览：使用 DEMO 示例引擎" : "审核引擎就绪");
