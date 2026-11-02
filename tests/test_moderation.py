@@ -111,24 +111,26 @@ class ModerationTests(unittest.TestCase):
     def test_speech_times_drive_final_windows_after_independent_asr(self):
         video = self.root / 'audio.mp4'
         subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i',
-                        'color=c=red:s=320x180:d=2:r=20', '-f', 'lavfi', '-i',
-                        'sine=frequency=440:duration=2', '-c:v', 'libx264', '-c:a', 'aac', '-shortest', str(video)],
+                        'color=c=red:s=320x180:d=6:r=20', '-f', 'lavfi', '-i',
+                        'sine=frequency=440:duration=6', '-c:v', 'libx264', '-c:a', 'aac', '-shortest', str(video)],
                        check=True, capture_output=True)
         def fake_asr(video_path, result_path, **kwargs):
             audio_intervals = json.loads(Path(result_path).read_text())['segments']
             self.assertEqual(len(audio_intervals), 1)
             self.assertNotIn('frames', audio_intervals[0])
             return {'segments': [{'segment_id': 1, 'utterances': [
-                {'start_sec': 0.4, 'end_sec': 1.2, 'text': 'spoken phrase'}]}]}
+                {'start_sec': 1.5, 'end_sec': 3.5, 'text': 'spoken phrase'}]}]}
         with patch('short_video_moderation.pipeline.transcribe_video_blocks', side_effect=fake_asr):
             result = prepare(video, self.root / 'prepared', SamplingConfig(),
                              TranscriptionConfig(initial_prompt=None, hotwords=None))
         spoken = next(p for p in result['segments'] if p['speech_text'])
-        self.assertEqual((spoken['start_sec'], spoken['end_sec']), (0.4, 1.2))
-        self.assertTrue(all(0.4 <= f['time_sec'] < 1.2 for f in spoken['frames']))
+        self.assertEqual((spoken['start_sec'], spoken['end_sec']), (1.5, 3.5))
+        self.assertTrue(all(1.5 <= f['time_sec'] < 3.5 for f in spoken['frames']))
         self.assertEqual(result['alignment']['precision'], 'asr_segment')
         self.assertEqual(result['segments'][0]['speech_text'], '')
         self.assertEqual(result['segments'][-1]['speech_text'], '')
+        self.assertTrue(all(s['frames'] for s in result['segments']), 'every window keeps a frame after de-duplication')
+        self.assertLess(result['frame_statistics']['kept'], result['frame_statistics']['sampled'])
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
     def test_real_silent_video_decoding_and_scene_supplement(self):
@@ -137,11 +139,17 @@ class ModerationTests(unittest.TestCase):
                         'color=c=red:s=320x180:d=0.75:r=20', '-f', 'lavfi', '-i',
                         'color=c=blue:s=320x180:d=1.25:r=20', '-filter_complex',
                         '[0:v][1:v]concat=n=2:v=1:a=0[v]', '-map', '[v]', '-c:v', 'libx264', str(video)], check=True, capture_output=True)
-        result = prepare(video, self.root / 'prepared', SamplingConfig(interval_sec=0.5))
+        result = prepare(video, self.root / 'prepared', SamplingConfig(interval_sec=0.5, dedupe_max_distance=0))
         frames = [f for s in result['segments'] for f in s['frames']]
         self.assertFalse(result['has_audio'])
         self.assertTrue(any(abs(f['time_sec'] - 0.75) < 0.06 for f in frames))
         self.assertTrue(all(b['time_sec'] - a['time_sec'] <= 0.55 for a,b in zip(frames, frames[1:])))
+        # With de-duplication the flat colours collapse, but the red→blue cut is kept.
+        deduped = prepare(video, self.root / 'deduped', SamplingConfig(interval_sec=0.5))
+        kept = [f['time_sec'] for s in deduped['segments'] for f in s['frames']]
+        self.assertLess(len(kept), len(frames))
+        self.assertTrue(any(abs(t - 0.75) < 0.06 for t in kept))
+        self.assertEqual(len(list((self.root / 'deduped' / 'frames').glob('*.jpg'))), len(kept))
         for frame in frames:
             with Image.open(frame['path']) as image:
                 self.assertGreaterEqual(min(image.size), 280)

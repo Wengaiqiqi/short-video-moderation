@@ -19,10 +19,22 @@ export function providerLabel(id: string) { return PROVIDER_LABEL[id] ?? id.toUp
 export function categoryLabel(id: string) { return CATEGORY_LABEL[id] ?? id; }
 
 export function verdictOf(row: ModerationRow): Verdict {
+  if (row.status === "skipped") return "allow";
   if (row.status !== "completed") return "review";
   return row.action === "block" ? "block" : row.action === "allow" ? "allow" : "review";
 }
-export function isFailed(row?: ModerationRow) { return !!row && row.status !== "completed"; }
+export function isFailed(row?: ModerationRow) { return !!row && row.status !== "completed" && row.status !== "skipped"; }
+export function isSkipped(row?: ModerationRow) { return !!row && row.status === "skipped"; }
+const ERROR_TEXT: Record<string, string> = {
+  http_401: "鉴权失败（401）", http_403: "无权限（403）", http_404: "地址或模型不存在（404）", http_429: "请求过于频繁（429）",
+  timeout: "请求超时", network: "网络错误", invalid_json: "响应格式错误", retries_exhausted: "重试后仍失败", asr_failed: "语音识别失败",
+};
+export function errorText(code?: string) {
+  if (!code) return "未知错误";
+  if (ERROR_TEXT[code]) return ERROR_TEXT[code];
+  const http = /^http_(\d+)$/.exec(code);
+  return http ? `服务错误（${http[1]}）` : code;
+}
 export function peakOf(row?: ModerationRow) {
   const values = Object.values(row?.probabilities ?? {});
   return values.length ? Math.max(...values) : 0;
@@ -126,14 +138,14 @@ export function pad2(n: number) { return String(n).padStart(2, "0"); }
 
 /**
  * Whole-video verdict, strictest wins: any window blocked by any provider → block;
- * otherwise any review or failed window (or no windows at all) → review; else allow.
+ * otherwise any review or failed window (or nothing judged at all) → review; else allow.
  */
 export function videoVerdict(report: ModerationReport | null | undefined): Verdict {
   let verdict: Verdict = "allow";
   let rows = 0;
   for (const result of Object.values(report?.providers ?? {})) {
     for (const row of result.segments) {
-      rows += 1;
+      if (row.status !== "skipped") rows += 1;
       const v = verdictOf(row);
       if (SEVERITY[v] > SEVERITY[verdict]) verdict = v;
     }
@@ -145,7 +157,8 @@ export const VERDICT_ZH: Record<Verdict, string> = { allow: "通过", block: "�
 /** Rough share of one video's run, from the stage list (prepare → align → providers). */
 export function stageProgress(stages: Record<string, { state: string; done?: number; total?: number }>) {
   const providers = (["jev", "openai"] as const).filter(id => stages[id] && stages[id].state !== "skip");
-  let value = stages.prepare?.state === "run" ? 0.08 : stages.prepare?.state === "pass" ? 0.24 : 0.02;
+  const asr = stages.prepare?.total ? (stages.prepare.done ?? 0) / stages.prepare.total : 0;
+  let value = stages.prepare?.state === "run" ? 0.04 + 0.18 * asr : stages.prepare?.state === "pass" ? 0.24 : 0.02;
   if (stages.align?.state === "pass") value = 0.3;
   for (const id of providers) {
     const stage = stages[id];
@@ -153,4 +166,15 @@ export function stageProgress(stages: Record<string, { state: string; done?: num
     value += (0.68 / providers.length) * share;
   }
   return Math.min(0.99, value);
+}
+
+/** Where one video is in the pipeline, for the flow map. */
+export type Phase = "queued" | "prepare" | "align" | "classify" | "done";
+export function phaseOf(stages?: Record<string, { state: string }>): Phase {
+  if (!stages) return "queued";
+  if (stages.jev?.state === "run" || stages.openai?.state === "run") return "classify";
+  if (stages.align?.state === "run") return "align";
+  if (stages.align?.state === "pass") return "classify";
+  if (stages.prepare?.state === "run") return "prepare";
+  return "queued";
 }

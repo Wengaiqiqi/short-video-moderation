@@ -7,6 +7,7 @@ from .paths import cache_root
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
 
+from .errors import UserFacingError
 from .cloud_asr import (
     AudioExtractor,
     MimoASRSettings,
@@ -153,7 +154,7 @@ def _default_model_factory(config: TranscriptionConfig) -> WhisperModelLike:
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
-        raise RuntimeError(
+        raise UserFacingError(
             "缺少语音识别依赖，请执行：python -m pip install faster-whisper"
         ) from exc
     download_root = (
@@ -321,6 +322,7 @@ def transcribe_video_blocks(
     api_key: str | None = None,
     cloud_requester: MimoRequester | None = None,
     audio_extractor: AudioExtractor | None = None,
+    cloud_limiter: Any = None,
 ) -> dict[str, Any]:
     started_at = time.perf_counter()
     video = Path(video_path)
@@ -368,6 +370,7 @@ def transcribe_video_blocks(
             ),
             requester=cloud_requester,
             audio_extractor=audio_extractor,
+            limiter=cloud_limiter,
         )
         utterance_count = sum(
             len(block.get("utterances", [])) for block in block_transcripts

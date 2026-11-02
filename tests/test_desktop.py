@@ -59,11 +59,14 @@ class DesktopTests(unittest.TestCase):
     def test_upload_confirmation_is_required_before_preparation(self):
         events = []
         with patch('short_video_moderation.desktop.prepare') as prepare:
-            thread = start_moderation({}, lambda event, **data: events.append((event, data)))
-            thread.join(10)
-            self.assertFalse(thread.is_alive())
+            threads = [start_moderation({'job_id': job}, lambda event, **data: events.append((event, data)))
+                       for job in ('a', 'b')]
+            for thread in threads:
+                thread.join(10)
+                self.assertFalse(thread.is_alive())
             prepare.assert_not_called()
-        self.assertEqual(events[-1][0], 'moderation.failed')
+        # Videos run side by side; every event names its job.
+        self.assertEqual(sorted(data['job_id'] for event, data in events if event == 'moderation.failed'), ['a', 'b'])
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
     def test_independent_desktop_runs_both_providers_without_audio_or_old_repo(self):

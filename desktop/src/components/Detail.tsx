@@ -1,4 +1,4 @@
-import { VERDICT_ZH, categoriesOf, categoryLabel, fmtTime, isFailed, pad2, providerLabel, providersOf, tally, thresholds, type SegmentView } from "../lib/report";
+import { VERDICT_ZH, categoriesOf, categoryLabel, errorText, fmtTime, isFailed, isSkipped, pad2, providerLabel, providersOf, tally, thresholds, type SegmentView } from "../lib/report";
 import { VerdictTag, VideoTag } from "./Results";
 import type { VideoItem } from "../types";
 
@@ -9,7 +9,7 @@ function Caveats({ cloudAsr }: { cloudAsr: boolean }) {
     <li>阈值为实验配置，尚未用验证集校准。</li>
     <li>JEV 概率与对照模型自报分数含义不同，不宜直接比较数值。</li>
     <li>片段时间范围不等于精确的违规发生时间；抽样可能漏掉短暂事件。</li>
-    {cloudAsr && <li className="warn">云端 ASR 按 30 秒音频块对齐，窗口边界精度较低。</li>}
+    {cloudAsr && <li className="warn">云端 ASR 没有逐句时间戳：按静音切分成语音段识别，时间精度为语音段级。</li>}
   </ul>;
 }
 
@@ -30,7 +30,9 @@ export default function Detail({ video, providers, segment, cloudAsr }: {
         return <div key={provider} className="detail-provider">
           <div className="detail-head"><b>{providerLabel(provider)}</b><VerdictTag row={row} />
             <span className="meta">{row.model ?? ""}{row.elapsed_sec != null ? ` · ${row.elapsed_sec.toFixed(2)}s` : ""}</span></div>
-          {isFailed(row) ? <p className="notice v-failed">推理失败（{row.error_type ?? "未知错误"}），本段需人工复核。</p>
+          {row.evidence === "asr_failed" && <p className="notice v-failed">该段语音识别失败，仅按画面判断，已至少归入待定。</p>}
+          {isSkipped(row) ? <p className="hint">此窗口没有{row.skip_reason === "no_speech" ? "讲话" : row.skip_reason === "no_visual_evidence" ? "抽样画面" : "可审内容"}，未送审。</p>
+            : isFailed(row) ? <p className="notice v-failed">推理失败（{errorText(row.error_type)}），本段需人工复核。</p>
             : categories.map(category => {
               const value = row.probabilities?.[category] ?? 0;
               const tone = value >= limits.block ? "block" : value >= limits.review ? "review" : "allow";

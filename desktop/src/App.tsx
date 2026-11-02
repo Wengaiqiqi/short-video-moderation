@@ -8,11 +8,11 @@ import Results from "./components/Results";
 import TaskPanel, { type TaskForm } from "./components/TaskPanel";
 import TopBar from "./components/TopBar";
 import { segmentsOf, stageProgress, visibleProviders, type ProviderFilter, type Verdict } from "./lib/report";
-import { useModeration } from "./useModeration";
+import { freshStages, useModeration } from "./useModeration";
 
 export default function App() {
   const m = useModeration();
-  const { preview, settings, setSettings, busy, videos, queueActive, stages } = m;
+  const { preview, settings, setSettings, busy, videos, queueActive, stagesById } = m;
   const [form, setForm] = useState<TaskForm>({ provider: "both", modality: "multimodal", key: "", interval: 0.5, seconds: 8, consent: false });
   const [error, setError] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -65,10 +65,15 @@ export default function App() {
   const pending = videos.filter(v => v.status === "queued" || v.status === "running").length;
   const total = videos.filter(v => v.status !== "queued" || queueActive).length;
   const done = videos.filter(v => v.status === "done" || v.status === "failed").length;
-  const progress = queueActive && total ? Math.min(1, (done + (busy ? stageProgress(stages) : 0)) / total) : done && !pending ? 1 : 0;
+  const partial = videos.filter(v => v.status === "running").reduce((a, v) => a + (stagesById[v.id] ? stageProgress(stagesById[v.id]) : 0), 0);
+  const progress = (queueActive || busy) && total ? Math.min(1, (done + partial) / total) : done && !pending ? 1 : 0;
+  // The pipeline panel follows the selected video, else the earliest running one, else the last finished.
+  const focus = (video && stagesById[video.id] ? video : null)
+    ?? videos.find(v => v.status === "running")
+    ?? [...videos].reverse().find(v => stagesById[v.id]) ?? null;
 
   return <div className={`app${collapsed ? " collapsed" : ""}`}>
-    <TopBar preview={preview} engine={m.engine} busy={busy} videos={videos} batch={m.batch} queueActive={queueActive} />
+    <TopBar preview={preview} engine={m.engine} busy={busy} videos={videos} batch={m.batch} queueActive={queueActive} limit={m.limit} />
     <div className="progress-line" role="progressbar" aria-label="队列进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
       <i style={{ width: `${progress * 100}%` }} className={busy ? "busy" : undefined} />
     </div>
@@ -77,20 +82,21 @@ export default function App() {
         busy={busy} error={error} preview={preview} collapsed={collapsed} onCollapse={setCollapsed}
         onAddFiles={() => { void addFiles(); }} onAddFolder={() => { void addFolder(); }} onAddPath={path => m.addVideos([path])}
         onBrowseOutput={() => { void browseOutput(); }} onRemove={m.removeVideo} onClearQueued={m.clearQueued}
-        onStart={start} onStop={m.stopQueue} />
+        onStart={start} onStop={m.stopQueue} running={m.running} limit={m.limit} />
       <section className="panel flow-panel">
         <header className="panel-head">
           <span><b>SIGNAL MAP</b> · 视频流向{preview && <span className="tag demo">DEMO 数据</span>}</span>
           <span className="meta">左：待审视频 → 中：处理阶段 → 右：判定（点击查看）</span>
         </header>
-        <FlowMap videos={videos} stages={stages} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin}
+        <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin}
           meta={{ interval: form.interval, segmentSeconds: form.seconds, cloud: cloudAsr,
                   asr: cloudAsr ? `MiMo ${settings?.mimo_model ?? ""}` : `whisper ${settings?.asr_model ?? ""}` }} />
       </section>
     </div>
     <div className="dock">
       <Feed log={m.log} />
-      <Pipeline stages={stages} message={m.message} />
+      <Pipeline stages={focus ? stagesById[focus.id] ?? freshStages() : freshStages()} message={m.message} video={focus?.name}
+        running={m.running} />
       <Results videos={videos} video={video} onVideo={selectVideo} bin={bin} onBin={selectBin}
         segment={segmentId} onSegment={setSegmentId} filter={filter} onFilter={setFilter} preview={preview} />
       <Detail video={video} providers={providers} segment={segment} cloudAsr={cloudAsr} />

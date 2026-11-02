@@ -4,13 +4,20 @@ export interface Settings {
   llm_base_url: string; llm_model: string; llm_api_key?: string;
   asr_engine: "faster-whisper" | "mimo-cloud";
   asr_model: string; asr_language: string; asr_device: string; asr_compute_type: string;
-  mimo_base_url: string; mimo_model: string; asr_api_key?: string; asr_concurrency: number;
+  mimo_base_url: string; mimo_model: string; asr_api_key?: string;
+  /** Request limits shared by every video running at the same time. */
+  asr_concurrency: number; model_concurrency: number;
+  /** How many videos are processed at once (default 11). */
+  video_concurrency: number;
   ffmpeg_path: string; ffprobe_path: string;
 }
 export interface ModerationRow {
   segment_id: number; start_sec: number; end_sec: number;
+  /** completed | failed | skipped (no evidence for this modality) */
   status: string; action: string; probabilities?: Record<string, number>;
-  error_type?: string; model?: string;
+  error_type?: string; model?: string; skip_reason?: string;
+  /** "asr_failed": speech could not be transcribed, judged on frames and held for review */
+  evidence?: string;
   elapsed_sec?: number; visual_evidence?: string; score_kind?: string;
 }
 export interface ModerationPolicy {
@@ -28,7 +35,7 @@ export interface ModerationReport {
 }
 export interface WorkerEvent {
   type: string; message?: string; error?: string; settings?: Settings; report?: ModerationReport;
-  video_path?: string;
+  video_path?: string; job_id?: string;
   /** video.thumbnail */ id?: string; data_url?: string;
   /** videos.listed */ directory?: string; videos?: string[];
 }
@@ -37,7 +44,7 @@ export interface ModerationRequest {
   provider: "both" | "jev" | "openai";
   modality: "multimodal" | "visual" | "text";
   jev_key: string; interval: number; segment_seconds: number;
-  settings: Settings; upload_consent: boolean;
+  settings: Settings; upload_consent: boolean; job_id?: string;
 }
 
 /** One line in the FEED panel. Kept in memory for the current window only. */

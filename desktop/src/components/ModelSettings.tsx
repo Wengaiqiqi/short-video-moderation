@@ -15,6 +15,8 @@ export default function ModelSettings({ section, settings, onChange }: { section
     <div className="group"><h3><span className="swatch openai" />多模态对照组</h3>{field("llm_base_url", "OpenAI 兼容服务地址")}{field("llm_model", "模型名称")}
       {field("llm_api_key", "API Key", "password", "或设置 LLM_API_KEY 环境变量")}
       <p className="hint">默认对照模型只是示例，请填写实际使用的模型名称及地址。</p></div>
+    <div className="group"><h3>请求并发</h3>{field("model_concurrency", "每组模型同时请求数（全部视频共享，1–64）", "number")}
+      <p className="hint">JEV 与对照组同时运行，各自最多这么多个请求在途；遇到 429 会按服务要求等待后重试。</p></div>
   </>;
   if (section === "asr") return <div className="group">
     <Segmented legend="识别引擎" name="asr-engine" value={settings.asr_engine} onChange={asr_engine => onChange({ ...settings, asr_engine })}
@@ -28,8 +30,9 @@ export default function ModelSettings({ section, settings, onChange }: { section
       <p className="hint">本地模型首次使用时会下载权重。时间戳取识别片段。</p>
     </> : <>
       {field("mimo_base_url", "ASR 服务地址")}{field("mimo_model", "ASR 模型名称")}
-      {field("asr_api_key", "ASR API Key", "password", "或设置 MIMO_API_KEY 环境变量")}{field("asr_concurrency", "并发请求数（1–10）", "number")}
-      <p className="hint warn">云端 ASR 没有逐句时间戳，按 30 秒音频块对齐，窗口边界精度较低；音频会发送至该服务。</p>
+      {field("asr_api_key", "ASR API Key", "password", "或设置 MIMO_API_KEY 环境变量")}{field("asr_concurrency", "同时请求数（全部视频共享，1–10）", "number")}
+      <p className="hint">先按静音把音频切成不超过「单段最长」的语音段，只上传有声音的段；纯静音不上传。某段识别失败时，对应窗口只按画面判断并归入待定，不会让整个视频失败。</p>
+      <p className="hint warn">云端 ASR 没有逐句时间戳，时间精度为语音段级；音频会发送至该服务。</p>
     </>}
   </div>;
   return <div className="group">

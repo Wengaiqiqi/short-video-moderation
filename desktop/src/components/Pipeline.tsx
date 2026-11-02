@@ -2,14 +2,17 @@ import { STAGE_ORDER } from "../useModeration";
 import type { Stage, StageId } from "../types";
 
 const NAMES: Record<StageId, [string, string]> = {
-  engine: ["ENGINE", "引擎连接"], prepare: ["PREPARE", "抽帧 ∥ 转写"], align: ["ALIGN", "语音对齐"],
+  engine: ["ENGINE", "引擎连接"], prepare: ["PREPARE", "抽帧 ∥ 云端转写"], align: ["ALIGN", "窗口对齐"],
   jev: ["JEV", "逐段推理"], openai: ["BASELINE", "对照组逐段"], report: ["REPORT", "生成报告"],
 };
 const STATE: Record<Stage["state"], string> = { wait: "WAIT", run: "RUN", pass: "PASS", warn: "WARN", fail: "FAIL", skip: "SKIP" };
 
-export default function Pipeline({ stages, message }: { stages: Record<StageId, Stage>; message: string }) {
+export default function Pipeline({ stages, message, video, running }: {
+  stages: Record<StageId, Stage>; message: string; video?: string; running: number;
+}) {
   return <section className="panel dock-panel">
-    <header className="panel-head"><span><b>PIPELINE</b> · 流程阶段</span></header>
+    <header className="panel-head"><span><b>PIPELINE</b> · 流程阶段</span>
+      <span className="meta" title={video}>{video ? `${video}` : "—"}{running > 1 ? ` · 并行 ${running}` : ""}</span></header>
     <ul className="pipeline">
       {STAGE_ORDER.map(id => {
         const stage = stages[id];

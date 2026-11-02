@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
-  VERDICTS, VERDICT_ZH, agreement, categoryLabel, fmtDuration, fmtTime, isFailed, pad2, peakOf, providerLabel, providersOf,
+  VERDICTS, VERDICT_ZH, agreement, categoryLabel, errorText, fmtDuration, fmtTime, isFailed, isSkipped, pad2, peakOf, providerLabel, providersOf,
   segmentsOf, tally, thresholds, verdictOf, visibleProviders, type ProviderFilter, type SegmentView, type Verdict,
 } from "../lib/report";
 import type { ModerationRow, VideoItem } from "../types";
 
 export function VerdictTag({ row }: { row?: ModerationRow }) {
   if (!row) return <span className="vtag none">—</span>;
-  if (isFailed(row)) return <span className="vtag v-failed" title={row.error_type}>失败·待定</span>;
+  if (isSkipped(row)) return <span className="vtag none" title="此窗口没有该模态的证据，未送审">跳过</span>;
+  if (isFailed(row)) return <span className="vtag v-failed" title={errorText(row.error_type)}>失败·待定</span>;
   const verdict = verdictOf(row);
-  return <span className={`vtag v-${verdict}`}>{VERDICT_ZH[verdict]}</span>;
+  return <span className={`vtag v-${verdict}`} title={row.evidence === "asr_failed" ? "语音识别失败，仅按画面判断" : undefined}>
+    {VERDICT_ZH[verdict]}{row.evidence === "asr_failed" ? "*" : ""}</span>;
 }
 export function VideoTag({ video }: { video: VideoItem }) {
   if (video.status === "queued") return <span className="vtag none">排队</span>;

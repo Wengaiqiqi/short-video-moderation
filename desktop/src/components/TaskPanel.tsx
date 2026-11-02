@@ -21,7 +21,7 @@ interface Props {
   collapsed: boolean; onCollapse: (collapsed: boolean) => void;
   onAddFiles: () => void; onAddFolder: () => void; onAddPath: (path: string) => void; onBrowseOutput: () => void;
   onRemove: (id: string) => void; onClearQueued: () => void;
-  onStart: () => void; onStop: () => void;
+  onStart: () => void; onStop: () => void; running: number; limit: number;
 }
 
 export default function TaskPanel(props: Props) {
@@ -73,6 +73,15 @@ export default function TaskPanel(props: Props) {
               </li>)}
             </ol>}
             {queued > 1 && <button type="button" className="link-button" onClick={props.onClearQueued}>清空排队</button>}
+            {/* Can be changed while the queue runs; takes effect as videos finish */}
+            {settings && <label className="field inline-field">同时处理视频数
+              <span className="stepper">
+                <button type="button" aria-label="减少并发" onClick={() => setSettings({ ...settings, video_concurrency: Math.max(1, (settings.video_concurrency ?? 11) - 1) })}>−</button>
+                <input type="number" min={1} max={32} step={1} value={settings.video_concurrency ?? 11}
+                  onChange={e => setSettings({ ...settings, video_concurrency: Math.max(1, Math.min(32, Math.round(Number(e.target.value) || 1))) })} />
+                <button type="button" aria-label="增加并发" onClick={() => setSettings({ ...settings, video_concurrency: Math.min(32, (settings.video_concurrency ?? 11) + 1) })}>＋</button>
+              </span>
+              <span className="h-meta">进行中 {props.running}/{props.limit}</span></label>}
           </div>
           <fieldset className="plain" disabled={locked}>
             <div className="group">
@@ -104,7 +113,7 @@ export default function TaskPanel(props: Props) {
         <button className={`primary${queueActive ? " stop" : ""}`} type="submit" disabled={!settings || (!queueActive && queued === 0)}>
           {queueActive ? "暂停队列（当前视频完成后）" : `${preview ? "运行 DEMO" : "开始审核"} · ${queued} 个视频`}
         </button>
-        <p className="hint">依次审核队列中的视频；整段视频按最严结论归入通过 / 拦截 / 待定。</p>
+        <p className="hint">队列中的视频并行审核；整段视频按最严结论归入通过 / 拦截 / 待定。</p>
       </div>
     </form>
   </aside>;

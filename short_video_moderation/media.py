@@ -8,6 +8,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .errors import UserFacingError
+
 # Prevent FFmpeg from inheriting and consuming Worker's command pipe.
 _SUBPROCESS_KWARGS = (
     {"stdin": subprocess.DEVNULL, "creationflags": subprocess.CREATE_NO_WINDOW}
@@ -17,7 +19,7 @@ _SUBPROCESS_KWARGS = (
 
 
 
-class FFmpegError(RuntimeError):
+class FFmpegError(UserFacingError):
     pass
 
 

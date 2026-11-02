@@ -5,7 +5,7 @@ import type { VideoItem } from "../types";
 
 interface Props {
   preview: boolean; engine: EngineState; busy: boolean;
-  videos: VideoItem[]; batch: BatchInfo | null; queueActive: boolean;
+  videos: VideoItem[]; batch: BatchInfo | null; queueActive: boolean; limit: number;
 }
 
 const ENGINE_TEXT: Record<EngineState, string> = { connecting: "连接中", ready: "就绪", running: "审核中", error: "异常" };
@@ -20,16 +20,16 @@ function useNow(active = true) {
   return now;
 }
 
-export default function TopBar({ preview, engine, busy, videos, batch, queueActive }: Props) {
+export default function TopBar({ preview, engine, busy, videos, batch, queueActive, limit }: Props) {
   const now = useNow();
   const count = (test: (v: VideoItem) => boolean) => videos.filter(test).length;
   const finished = count(v => v.status === "done" || v.status === "failed");
-  const running = videos.find(v => v.status === "running");
+  const running = videos.filter(v => v.status === "running");
   const elapsed = batch ? (batch.finishedAt && !queueActive ? batch.finishedAt : now) - batch.startedAt : null;
   const tone = (n: number, t: string) => (n ? t : undefined);
   const block = count(v => v.verdict === "block"), review = count(v => v.verdict === "review"), failed = count(v => v.status === "failed");
   const kpis: { label: string; zh: string; value: string; tone?: string; wide?: boolean }[] = [
-    { label: "NOW", zh: "审核中", value: running ? running.name : "—", wide: true },
+    { label: "NOW", zh: `审核中（并发上限 ${limit}）`, value: running.length ? `${running.length} 个 · ${running[0].name}` : "—", wide: true },
     { label: "QUEUE", zh: "排队", value: String(count(v => v.status === "queued")) },
     { label: "DONE", zh: "已审", value: String(finished) },
     { label: "PASS", zh: "通过", value: String(count(v => v.verdict === "allow")), tone: "allow" },

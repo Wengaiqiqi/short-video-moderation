@@ -11,6 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
+from .errors import UserFacingError
 from .media import FFmpegTools, _SUBPROCESS_KWARGS
 
 
@@ -19,9 +20,15 @@ class SamplingConfig:
     interval_sec: float = 0.5
     scene_threshold: float = 0.25
     segment_sec: float = 8.0
+    # Windows shorter than this are merged into a neighbour (pauses between sentences, video ends).
+    min_segment_sec: float = 1.0
     min_scene_gap_sec: float = 0.15
     max_frames_per_segment: int = 16
     max_duration_sec: float = 600.0
+    # Drop a frame only when it is nearly identical to the last kept one (bits differing out of 256),
+    # but always keep one frame every keepalive seconds. 0 disables de-duplication.
+    dedupe_max_distance: int = 3
+    dedupe_keepalive_sec: float = 2.0
 
     def validate(self):
         for value in (self.interval_sec, self.segment_sec, self.min_scene_gap_sec, self.max_duration_sec):
@@ -31,6 +38,53 @@ class SamplingConfig:
             raise ValueError("Invalid scene threshold or frame batch size")
         if self.min_scene_gap_sec > self.interval_sec:
             raise ValueError("Scene gap cannot exceed periodic interval")
+        if not math.isfinite(self.min_segment_sec) or self.min_segment_sec < 0:
+            raise ValueError("Minimum window must be zero or positive")
+        if not 0 <= self.dedupe_max_distance <= 32 or not math.isfinite(self.dedupe_keepalive_sec) \
+                or self.dedupe_keepalive_sec < self.interval_sec:
+            raise ValueError("Invalid frame de-duplication settings")
+
+
+def effective_min_segment(config: SamplingConfig) -> float:
+    """Short windows merge up to min_segment_sec, but never more than half the maximum window."""
+    return min(config.min_segment_sec, config.segment_sec / 2)
+
+
+def frame_signature(image: Image.Image) -> list[str]:
+    """256-bit difference hash (structure) plus a 4x4 colour thumbnail (colour and brightness), as hex.
+
+    The hash alone ignores global colour, so two flat frames of different colours would look equal.
+    """
+    small = image.convert('L').resize((17, 16), Image.Resampling.BILINEAR)
+    pixels = list(small.getdata())
+    bits = 0
+    for row in range(16):
+        for col in range(16):
+            left, right = pixels[row * 17 + col], pixels[row * 17 + col + 1]
+            bits = (bits << 1) | (left > right)
+    return [f'{bits:064x}', image.convert('RGB').resize((4, 4), Image.Resampling.BOX).tobytes().hex()]
+
+
+def _near_duplicate(a, b, max_distance):
+    hash_a, thumb_a = int(a[0], 16), bytes.fromhex(a[1])
+    hash_b, thumb_b = int(b[0], 16), bytes.fromhex(b[1])
+    return (bin(hash_a ^ hash_b).count('1') <= max_distance
+            and max(abs(x - y) for x, y in zip(thumb_a, thumb_b)) <= 12)
+
+
+def dedupe_frames(frames: list[dict], config: SamplingConfig) -> list[dict]:
+    """Within one review window: keep the first frame, scene changes and one frame per keepalive
+    period; drop only frames nearly identical to the last kept one. Frames without a signature stay."""
+    if config.dedupe_max_distance <= 0:
+        return list(frames)
+    kept: list[dict] = []
+    for frame in frames:
+        last = kept[-1] if kept else None
+        if (last is None or '_sig' not in frame or '_sig' not in last
+                or frame['time_sec'] - last['time_sec'] >= config.dedupe_keepalive_sec
+                or not _near_duplicate(frame['_sig'], last['_sig'], config.dedupe_max_distance)):
+            kept.append(frame)
+    return kept
 
 
 def group_frames(frames: list[dict], duration: float, config: SamplingConfig) -> list[dict]:
@@ -67,12 +121,13 @@ def prepare_video(video_path, output_dir, config=SamplingConfig(), *, ffmpeg_pat
                '-fps_mode', 'vfr', '-q:v', '3', str(frame_dir / 'frame_%06d.jpg')]
     result = subprocess.run(command, capture_output=True, timeout=600, **_SUBPROCESS_KWARGS)
     if result.returncode:
-        raise RuntimeError('Video decoding failed: ' + result.stderr.decode(errors='replace')[-1000:])
+        details = result.stderr.decode(errors='replace').strip().splitlines()[-1:] or ['']
+        raise UserFacingError(f'视频解码失败，请确认文件完整且为 FFmpeg 支持的格式。{details[0][-200:]}')
     timestamps = [float(t) for t in re.findall(r'\bn:\s*\d+\s+pts:\s*\S+\s+pts_time:([\d.eE+-]+)',
                                                result.stderr.decode(errors='replace'))]
     files = sorted(frame_dir.glob('frame_*.jpg'))
     if not files or len(files) != len(timestamps):
-        raise RuntimeError('Decoded frame/timestamp count mismatch')
+        raise UserFacingError('视频解码结果异常（帧与时间戳数量不一致），请尝试重新封装视频后再审核。')
     frames = []
     for image_path, timestamp in zip(files, timestamps):
         if timestamp >= metadata.duration_sec:
@@ -82,7 +137,9 @@ def prepare_video(video_path, output_dir, config=SamplingConfig(), *, ffmpeg_pat
             normalized = ImageOps.pad(source.convert('RGB'),
                                       (max(280, source.width), max(280, source.height)), color='black')
             normalized.save(image_path, quality=90)
-        frames.append({'time_sec': timestamp, 'path': image_path.as_posix(),
+            signature = frame_signature(normalized)
+        # '_sig' is used for per-window de-duplication in the pipeline and removed before inputs.json.
+        frames.append({'time_sec': timestamp, 'path': image_path.as_posix(), '_sig': signature,
                        'sha256': hashlib.sha256(image_path.read_bytes()).hexdigest()})
     probe = subprocess.run([tools.ffprobe, '-v', 'error', '-select_streams', 'a',
                             '-show_entries', 'stream=index', '-of', 'json', str(video)],
@@ -90,5 +147,7 @@ def prepare_video(video_path, output_dir, config=SamplingConfig(), *, ffmpeg_pat
     payload = dict(schema_version=2, video_id=video.stem, video_path=video.as_posix(),
                    duration_sec=metadata.duration_sec, has_audio=bool(json.loads(probe.stdout)['streams']),
                    sampling=asdict(config), segments=group_frames(frames, metadata.duration_sec, config))
-    (destination / 'segments.json').write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    public = dict(payload, segments=[dict(s, frames=[{k: v for k, v in f.items() if k != '_sig'} for f in s['frames']])
+                                     for s in payload['segments']])
+    (destination / 'segments.json').write_text(json.dumps(public, ensure_ascii=False, indent=2), encoding='utf-8')
     return payload

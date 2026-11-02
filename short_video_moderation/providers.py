@@ -5,6 +5,7 @@ import asyncio
 import base64
 import json
 import math
+import random
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,8 @@ class ProviderConfig:
     api_key_env: str
     timeout_sec: float = 120
     max_attempts: int = 3
+    # Simultaneous requests to this provider (used when no process-wide limiter is supplied).
+    max_concurrency: int = 4
 
     def validate(self):
         if self.provider not in {'jev', 'openai'}:
@@ -30,6 +33,26 @@ class ProviderConfig:
             raise ValueError('A model and HTTP(S) base URL are required')
         if not math.isfinite(self.timeout_sec) or self.timeout_sec <= 0 or not 1 <= self.max_attempts <= 5:
             raise ValueError('Invalid request timeout or retry limit')
+        if not 1 <= self.max_concurrency <= 64:
+            raise ValueError('Invalid request concurrency')
+
+
+class ModelRequestError(RuntimeError):
+    """Model call failure with a short code for the report (never the response body)."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def _retry_delay(response, attempt):
+    """Honour Retry-After when the server sends it, otherwise exponential backoff with jitter."""
+    try:
+        after = float(response.headers.get('Retry-After', '')) if response is not None else None
+    except ValueError:
+        after = None
+    base = after if after is not None and math.isfinite(after) and after >= 0 else 2 ** attempt
+    return min(30.0, base) + random.random() * 0.3
 
 
 def build_request(segment: dict, policy: dict, config: ProviderConfig, modality='multimodal'):
@@ -104,26 +127,41 @@ def normalize_response(raw: dict, config: ProviderConfig, categories):
             'score_kind': 'jev_noul_probability' if config.provider == 'jev' else 'llm_self_reported_probability'}
 
 
-async def evaluate(segment, policy, config, api_key, *, modality='multimodal', transport=None):
+async def evaluate(segment, policy, config, api_key, *, modality='multimodal', transport=None, client=None):
     url, headers, payload = build_request(segment, policy, config, modality)
     if not api_key.strip():
         raise ValueError('Missing API key')
     headers.update({'Authorization': 'Bearer ' + api_key, 'Idempotency-Key': str(uuid.uuid4())})
-    async with httpx.AsyncClient(timeout=config.timeout_sec, transport=transport) as client:
-        for attempt in range(config.max_attempts):
-            try:
-                response = await client.post(url, headers=headers, json=payload)
-            except httpx.TransportError:
-                if attempt + 1 == config.max_attempts:
-                    raise RuntimeError('Model transport failed') from None
-                await asyncio.sleep(2 ** attempt)
+    if client is None:
+        async with httpx.AsyncClient(timeout=config.timeout_sec, transport=transport) as own:
+            return await _post(own, url, headers, payload, config, policy)
+    return await _post(client, url, headers, payload, config, policy)
+
+
+async def _post(client, url, headers, payload, config, policy):
+    for attempt in range(config.max_attempts):
+        try:
+            response = await client.post(url, headers=headers, json=payload, timeout=config.timeout_sec)
+        except httpx.TimeoutException:
+            if attempt + 1 == config.max_attempts:
+                raise ModelRequestError('timeout') from None
+            await asyncio.sleep(_retry_delay(None, attempt))
+            continue
+        except httpx.TransportError:
+            if attempt + 1 == config.max_attempts:
+                raise ModelRequestError('network') from None
+            await asyncio.sleep(_retry_delay(None, attempt))
+            continue
+        if response.status_code == 429 or response.status_code >= 500:
+            if attempt + 1 < config.max_attempts:
+                await asyncio.sleep(_retry_delay(response, attempt))
                 continue
-            if response.status_code == 429 or response.status_code >= 500:
-                if attempt + 1 < config.max_attempts:
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-            if response.is_error:
-                # Server bodies can echo submitted content or credentials.
-                raise RuntimeError(f'Model HTTP {response.status_code}')
-            return normalize_response(response.json(), config, policy['categories'])
-    raise RuntimeError('Model request failed')
+        if response.is_error:
+            # Server bodies can echo submitted content or credentials.
+            raise ModelRequestError(f'http_{response.status_code}')
+        try:
+            raw = response.json()
+        except ValueError:
+            raise ModelRequestError('invalid_json') from None
+        return normalize_response(raw, config, policy['categories'])
+    raise ModelRequestError('retries_exhausted')

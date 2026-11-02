@@ -9,8 +9,9 @@ export const DEMO_SETTINGS: Settings = {
   output_root: "~/.cache/short-video-moderation/runtime/results",
   jev_base_url: "https://api.typesafe.ai/v1", jev_model: "jev-1.14.0",
   llm_base_url: "https://api.openai.com/v1", llm_model: "gpt-4o-mini",
-  asr_engine: "faster-whisper", asr_model: "small", asr_language: "zh", asr_device: "cpu", asr_compute_type: "int8",
-  mimo_base_url: "https://api.xiaomimimo.com/v1", mimo_model: "mimo-v2.5-asr", asr_concurrency: 3,
+  asr_engine: "mimo-cloud", asr_model: "small", asr_language: "zh", asr_device: "cpu", asr_compute_type: "int8",
+  mimo_base_url: "https://api.xiaomimimo.com/v1", mimo_model: "mimo-v2.5-asr",
+  asr_concurrency: 8, model_concurrency: 8, video_concurrency: 11,
   ffmpeg_path: "", ffprobe_path: "",
 };
 
@@ -110,21 +111,28 @@ export function demoReport(request: Pick<ModerationRequest, "provider" | "modali
   return report;
 }
 
-/** Emits the same event sequence as desktop.py for one video, on a timer. Returns a cancel function. */
+/** Emits the same event sequence as desktop.py for one video (tagged with its job id). Returns a cancel function. */
 export function simulateRun(request: ModerationRequest, emit: (event: WorkerEvent) => void) {
   const report = demoReport(request);
-  const steps: [number, WorkerEvent][] = [
-    [300, { type: "moderation.progress", message: "并行处理：画面抽样与音轨转写" }],
-    [1300, { type: "moderation.progress", message: "按讲话时间组合画面；补齐静音区间" }],
-  ];
-  let at = 1800;
+  const next = random(hash(request.video_path) + 5);
+  const tag = { job_id: request.job_id, video_path: request.video_path };
+  const progress = (message: string): WorkerEvent => ({ type: "moderation.progress", message, ...tag });
+  const speed = 0.7 + next() * 0.9;
+  const chunks = 3 + Math.floor(next() * 6);
+  const steps: [number, WorkerEvent][] = [[200, progress("并行处理：画面抽样与音轨转写")], [260, progress(`语音识别 0/${chunks}`)]];
+  for (let i = 1; i <= chunks; i++) steps.push([260 + i * 180 * speed, progress(`语音识别 ${i}/${chunks}`)]);
+  let at = 300 + chunks * 180 * speed;
+  steps.push([at, progress("按讲话时间组合画面；补齐静音区间")]);
+  at += 350;
+  // Both providers run at the same time, a few windows in flight each.
+  let end = at;
   for (const [provider, result] of Object.entries(report.providers)) {
-    result.segments.forEach((_, i) => {
-      steps.push([at, { type: "moderation.progress", message: `${provider}: 片段 ${i + 1}/${result.segments.length}` }]);
-      at += 70;
-    });
+    const total = result.segments.length;
+    steps.push([at, progress(`${provider}: 完成 0/${total}`)]);
+    for (let i = 1; i <= total; i++) steps.push([at + i * (90 + next() * 60) * speed, progress(`${provider}: 完成 ${i}/${total}`)]);
+    end = Math.max(end, steps[steps.length - 1][0]);
   }
-  steps.push([at + 200, { type: "moderation.completed", message: report.report_path, report, video_path: request.video_path }]);
+  steps.push([end + 200, { type: "moderation.completed", message: report.report_path, report, ...tag }]);
   const timers = steps.map(([delay, event]) => window.setTimeout(() => emit(event), delay));
   return () => timers.forEach(t => window.clearTimeout(t));
 }
