@@ -1,20 +1,59 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { openPath } from "@tauri-apps/plugin-opener";
-import type { ModerationReport } from "../types";
+import { categoryLabel, fmtTime, isFailed, pad2, peakOf, providerLabel, thresholds, verdictOf, type SegmentView } from "../lib/report";
+import type { ModerationReport, ModerationRow } from "../types";
 
-export default function Results({ report }: { report: ModerationReport }) {
+export function VerdictTag({ row }: { row?: ModerationRow }) {
+  if (!row) return <span className="vtag none">—</span>;
+  if (isFailed(row)) return <span className="vtag v-failed" title={row.error_type}>失败·待定</span>;
+  const verdict = verdictOf(row);
+  return <span className={`vtag v-${verdict}`}>{verdict === "allow" ? "通过" : verdict === "block" ? "拦截" : "待定"}</span>;
+}
+
+function topCategory(row?: ModerationRow) {
+  const entries = Object.entries(row?.probabilities ?? {});
+  if (!entries.length) return "—";
+  return categoryLabel(entries.reduce((a, b) => (b[1] > a[1] ? b : a))[0]);
+}
+
+/** Per-window verdict table; rows select the window in the flow map. */
+export default function Results({ report, providers, segments, selected, onSelect, preview }: {
+  report: ModerationReport | null; providers: string[]; segments: SegmentView[];
+  selected: number | null; onSelect: (id: number | null) => void; preview: boolean;
+}) {
   const [error, setError] = useState("");
-  const actions: Record<string, string> = { allow: "通过", review: "人工复核", block: "拦截" };
-  return <section className="card"><div className="section-heading"><h2>审核结果</h2>
-    <button onClick={() => { void openPath(report.report_path).catch(e => setError(String(e))); }}>打开 JSON 报告</button></div>
-    {error && <p role="alert">{error}</p>}
-    {Object.entries(report.providers).map(([provider, result]) => <section key={provider}>
-      <h3>{provider === "jev" ? "Jev" : "多模态对照组"} · {result.complete ? "已完成" : "存在失败片段，需复核"}</h3>
-      <div className="table-scroll"><table><thead><tr><th>片段</th><th>时间（秒）</th><th>结果</th><th>分类分数</th></tr></thead>
-        <tbody>{result.segments.map(row => <tr key={row.segment_id}><td>{row.segment_id}</td><td>{row.start_sec.toFixed(2)}–{row.end_sec.toFixed(2)}</td>
-          <td><span className={`badge ${row.action}`}>{row.status === "failed" ? "失败 · 人工复核" : actions[row.action] || row.action}</span></td>
-          <td>{row.probabilities ? Object.entries(row.probabilities).map(([key, value]) => `${key}: ${value.toFixed(3)}`).join(" / ") : row.error_type || "—"}</td></tr>)}</tbody>
-      </table></div></section>)}
-    <p className="muted">阈值尚需验证集校准。Jev 概率与对照模型自报分数的含义不同，片段范围也不等于精确违规时间。</p>
+  const body = useRef<HTMLTableSectionElement>(null);
+  useEffect(() => {
+    body.current?.querySelector("tr.on")?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+  const limits = thresholds(report);
+  const failures = segments.filter(s => s.failed).length;
+  return <section className="panel dock-panel">
+    <header className="panel-head"><span><b>SEGMENTS</b> · 片段判定</span>
+      {report && <button type="button" className="link-button" disabled={preview} title={preview ? "DEMO 预览没有报告文件" : report.report_path}
+        onClick={() => { setError(""); void openPath(report.report_path).catch(e => setError(String(e))); }}>打开 JSON 报告 ↗</button>}
+    </header>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    {!report ? <p className="empty">暂无结果。审核完成后，每个窗口的判定会列在这里。</p> : <>
+      {failures > 0 && <p className="notice v-failed">{failures} 个片段推理失败，已归入「待定」，需人工复核。</p>}
+      <div className="table-scroll">
+        <table>
+          <thead><tr><th>#</th><th>时间</th>{providers.map(p => <th key={p}>{providerLabel(p)}</th>)}<th>峰值</th><th>主类</th></tr></thead>
+          <tbody ref={body}>{segments.map(segment => {
+            const main = segment.rows[providers[0]];
+            const peak = Math.max(...providers.map(p => peakOf(segment.rows[p])));
+            return <tr key={segment.id} className={selected === segment.id ? "on" : undefined} tabIndex={0} aria-selected={selected === segment.id}
+              onClick={() => onSelect(selected === segment.id ? null : segment.id)}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(selected === segment.id ? null : segment.id); } }}>
+              <td className="num">{pad2(segment.id)}</td>
+              <td className="num">{fmtTime(segment.start)}–{fmtTime(segment.end)}</td>
+              {providers.map(p => <td key={p}><VerdictTag row={segment.rows[p]} /></td>)}
+              <td className={`num ${peak >= limits.block ? "t-block" : peak >= limits.review ? "t-review" : ""}`}>{peak.toFixed(3)}</td>
+              <td>{topCategory(main && !isFailed(main) ? main : segment.rows[providers[1]])}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </>}
   </section>;
 }

@@ -53,6 +53,8 @@ tests/              核心、ASR 与 worker 回归测试
 
 `settings` 与 `desktop/src/types.ts` 的 `Settings` 对应。模型密钥可从当前进程环境读取；用户填写时只通过内存传递，不写入设置或报告。
 
+界面根据 `moderation.progress` 的文字推断阶段：`并行处理…` 为抽帧与转写，`按讲话时间…` 为窗口对齐，`<provider>: 片段 i/N` 为逐段推理进度。修改这些文字时需同步 `desktop/src/useModeration.ts`。
+
 事件包括 `moderation.progress`、`moderation.completed`（包含 `report`）、`moderation.failed`、`moderation.rejected`、`worker.error`、`worker.exited`。同一后台一次运行一个审核任务。`completed` 表示批处理结束，单段仍可能失败，需检查各 provider 的 `complete` 和各段 `status`。
 
 当前版本没有任务取消、跨窗口恢复或持久任务队列。重设计页面时应继续保留失败段提示、上传确认、云端时间戳精度和未校准阈值说明。
