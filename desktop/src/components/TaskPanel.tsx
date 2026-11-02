@@ -1,10 +1,10 @@
 import { useState } from "react";
 import ModelSettings from "./ModelSettings";
 import Segmented from "./Segmented";
-import type { ModerationRequest, Settings } from "../types";
+import type { ModerationRequest, Settings, VideoItem } from "../types";
 
 export interface TaskForm {
-  video: string; provider: ModerationRequest["provider"]; modality: ModerationRequest["modality"];
+  provider: ModerationRequest["provider"]; modality: ModerationRequest["modality"];
   key: string; interval: number; seconds: number; consent: boolean;
 }
 type Tab = "task" | "models" | "asr" | "system";
@@ -12,21 +12,31 @@ const TABS: { id: Tab; en: string; zh: string }[] = [
   { id: "task", en: "TASK", zh: "任务" }, { id: "models", en: "MODELS", zh: "模型" },
   { id: "asr", en: "ASR", zh: "语音" }, { id: "system", en: "SYS", zh: "系统" },
 ];
+const STATUS: Record<VideoItem["status"], string> = { queued: "排队", running: "审核中", done: "完成", failed: "失败" };
 
 interface Props {
   form: TaskForm; update: (patch: Partial<TaskForm>) => void;
   settings: Settings | null; setSettings: (settings: Settings) => void;
-  busy: boolean; error: string; preview: boolean;
+  videos: VideoItem[]; queueActive: boolean; busy: boolean; error: string; preview: boolean;
   collapsed: boolean; onCollapse: (collapsed: boolean) => void;
-  onBrowse: (directory: boolean) => void; onSubmit: () => void;
+  onAddFiles: () => void; onAddFolder: () => void; onAddPath: (path: string) => void; onBrowseOutput: () => void;
+  onRemove: (id: string) => void; onClearQueued: () => void;
+  onStart: () => void; onStop: () => void;
 }
 
-export default function TaskPanel({ form, update, settings, setSettings, busy, error, preview, collapsed, onCollapse, onBrowse, onSubmit }: Props) {
+export default function TaskPanel(props: Props) {
+  const { form, update, settings, setSettings, videos, queueActive, busy, error, preview, collapsed, onCollapse } = props;
   const [tab, setTab] = useState<Tab>("task");
+  const [path, setPath] = useState("");
+  const pending = videos.filter(v => v.status === "queued" || v.status === "running");
+  const queued = pending.filter(v => v.status === "queued").length;
+  const finished = videos.length - pending.length;
+  const locked = queueActive || busy || !settings;
+
   if (collapsed) {
     return <aside className="panel task-rail">
       <button type="button" className="rail-button" onClick={() => onCollapse(false)} aria-label="展开任务配置" title="展开任务配置">»</button>
-      <span className="rail-text">TASK · 任务配置</span>
+      <span className="rail-text">TASK · 任务配置 · 排队 {queued}</span>
     </aside>;
   }
   return <aside className="panel task-panel">
@@ -38,40 +48,63 @@ export default function TaskPanel({ form, update, settings, setSettings, busy, e
       {TABS.map(t => <button key={t.id} type="button" role="tab" id={`tab-${t.id}`} aria-selected={tab === t.id} aria-controls="task-tabpanel"
         className={tab === t.id ? "on" : undefined} onClick={() => setTab(t.id)}><b>{t.en}</b>{t.zh}</button>)}
     </div>
-    <form className="task-form" onSubmit={e => { e.preventDefault(); onSubmit(); }}>
-      <fieldset className="task-scroll" disabled={busy || !settings} id="task-tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+    <form className="task-form" onSubmit={e => { e.preventDefault(); if (queueActive) props.onStop(); else props.onStart(); }}>
+      <div className="task-scroll" id="task-tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === "task" && <>
+          {/* The queue stays editable while a batch runs */}
           <div className="group">
-            <div className="path-field"><label className="field">视频文件<input value={form.video} spellCheck={false} onChange={e => update({ video: e.target.value })} placeholder="选择或输入视频完整路径" /></label>
-              <button type="button" onClick={() => onBrowse(false)}>浏览</button></div>
-            <div className="path-field"><label className="field">结果目录<input value={settings?.output_root ?? ""} spellCheck={false} onChange={e => settings && setSettings({ ...settings, output_root: e.target.value })} /></label>
-              <button type="button" onClick={() => onBrowse(true)}>浏览</button></div>
-          </div>
-          <div className="group">
-            <Segmented legend="模型组" name="provider" value={form.provider} onChange={provider => update({ provider })}
-              options={[{ value: "both", label: "JEV ＋ 对照" }, { value: "jev", label: "仅 JEV" }, { value: "openai", label: "仅对照" }]} />
-            <Segmented legend="输入模态" name="modality" value={form.modality} onChange={modality => update({ modality })}
-              options={[{ value: "multimodal", label: "画面＋转写" }, { value: "visual", label: "仅画面" }, { value: "text", label: "仅转写" }]} />
-            {form.provider !== "openai" && <label className="field">JEV API Key<input type="password" autoComplete="off" value={form.key}
-              onChange={e => update({ key: e.target.value })} placeholder="或设置 TYPESAFE_API_KEY 环境变量" /></label>}
-          </div>
-          <div className="group">
-            <h3>抽样与窗口</h3>
-            <div className="pair">
-              <label className="field">定时抽帧（秒）<input type="number" min={0.15} max={4} step={0.05} required value={form.interval} onChange={e => update({ interval: Number(e.target.value) })} /></label>
-              <label className="field">单段最长（秒）<input type="number" min={1} max={30} step={1} required value={form.seconds} onChange={e => update({ seconds: Number(e.target.value) })} /></label>
+            <h3>视频队列<span className="h-meta">排队 {queued} · 已完成 {finished}</span></h3>
+            <div className="btn-row">
+              <button type="button" onClick={props.onAddFiles} disabled={!settings}>＋ 添加视频</button>
+              <button type="button" onClick={props.onAddFolder} disabled={!settings}>＋ 整个文件夹</button>
             </div>
-            <p className="hint">画面抽样与语音识别并行，场景变化时补帧；静音区间独立审核。每段最多 16 帧，最长支持 10 分钟视频。</p>
+            <div className="path-field compact">
+              <input aria-label="视频路径" value={path} spellCheck={false} placeholder={preview ? "浏览器预览：点上方按钮添加 DEMO 视频" : "或粘贴视频完整路径后加入"}
+                onChange={e => setPath(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (path.trim()) { props.onAddPath(path); setPath(""); } } }} />
+              <button type="button" disabled={!path.trim()} onClick={() => { props.onAddPath(path); setPath(""); }}>加入</button>
+            </div>
+            {pending.length > 0 && <ol className="queue">
+              {pending.map(v => <li key={v.id} className={`q-${v.status}`}>
+                <span className="q-thumb">{v.thumb ? <img src={v.thumb} alt="" /> : null}</span>
+                <span className="q-name" title={v.path}>{v.name}</span>
+                <span className="q-state">{STATUS[v.status]}</span>
+                {v.status === "queued" && <button type="button" className="q-remove" aria-label={`移出队列：${v.name}`} onClick={() => props.onRemove(v.id)}>×</button>}
+              </li>)}
+            </ol>}
+            {queued > 1 && <button type="button" className="link-button" onClick={props.onClearQueued}>清空排队</button>}
           </div>
+          <fieldset className="plain" disabled={locked}>
+            <div className="group">
+              <div className="path-field"><label className="field">结果目录<input value={settings?.output_root ?? ""} spellCheck={false} onChange={e => settings && setSettings({ ...settings, output_root: e.target.value })} /></label>
+                <button type="button" onClick={props.onBrowseOutput}>浏览</button></div>
+              <Segmented legend="模型组" name="provider" value={form.provider} onChange={provider => update({ provider })}
+                options={[{ value: "both", label: "JEV ＋ 对照" }, { value: "jev", label: "仅 JEV" }, { value: "openai", label: "仅对照" }]} />
+              <Segmented legend="输入模态" name="modality" value={form.modality} onChange={modality => update({ modality })}
+                options={[{ value: "multimodal", label: "画面＋转写" }, { value: "visual", label: "仅画面" }, { value: "text", label: "仅转写" }]} />
+              {form.provider !== "openai" && <label className="field">JEV API Key<input type="password" autoComplete="off" value={form.key}
+                onChange={e => update({ key: e.target.value })} placeholder="或设置 TYPESAFE_API_KEY 环境变量" /></label>}
+            </div>
+            <div className="group">
+              <h3>抽样与窗口</h3>
+              <div className="pair">
+                <label className="field">定时抽帧（秒）<input type="number" min={0.15} max={4} step={0.05} required value={form.interval} onChange={e => update({ interval: Number(e.target.value) })} /></label>
+                <label className="field">单段最长（秒）<input type="number" min={1} max={30} step={1} required value={form.seconds} onChange={e => update({ seconds: Number(e.target.value) })} /></label>
+              </div>
+              <p className="hint">画面抽样与语音识别并行，场景变化时补帧；静音区间独立审核。每段最多 16 帧，单个视频最长 10 分钟。</p>
+            </div>
+          </fieldset>
         </>}
-        {tab !== "task" && settings && <ModelSettings section={tab} settings={settings} onChange={setSettings} />}
-      </fieldset>
+        {tab !== "task" && settings && <fieldset className="plain" disabled={locked}><ModelSettings section={tab} settings={settings} onChange={setSettings} /></fieldset>}
+      </div>
       <div className="task-foot">
-        <label className="consent"><input type="checkbox" checked={form.consent} disabled={busy} onChange={e => update({ consent: e.target.checked })} />
+        <label className="consent"><input type="checkbox" checked={form.consent} disabled={locked} onChange={e => update({ consent: e.target.checked })} />
           <span>允许将所选模态的画面/转写发送至模型服务；使用云端 ASR 时也会发送音频。</span></label>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="primary" type="submit" disabled={busy || !settings}>{busy ? "审核中…" : preview ? "运行 DEMO 预览" : "开始审核"}</button>
-        <p className="hint">示例规则覆盖暴力、仇恨与骚扰。</p>
+        <button className={`primary${queueActive ? " stop" : ""}`} type="submit" disabled={!settings || (!queueActive && queued === 0)}>
+          {queueActive ? "暂停队列（当前视频完成后）" : `${preview ? "运行 DEMO" : "开始审核"} · ${queued} 个视频`}
+        </button>
+        <p className="hint">依次审核队列中的视频；整段视频按最严结论归入通过 / 拦截 / 待定。</p>
       </div>
     </form>
   </aside>;

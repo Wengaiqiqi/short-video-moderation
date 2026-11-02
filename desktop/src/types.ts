@@ -28,6 +28,9 @@ export interface ModerationReport {
 }
 export interface WorkerEvent {
   type: string; message?: string; error?: string; settings?: Settings; report?: ModerationReport;
+  video_path?: string;
+  /** video.thumbnail */ id?: string; data_url?: string;
+  /** videos.listed */ directory?: string; videos?: string[];
 }
 export interface ModerationRequest {
   video_path: string; output_root: string;
@@ -43,3 +46,13 @@ export interface LogEntry { id: number; at: number; level: "info" | "run" | "ok"
 export type StageId = "engine" | "prepare" | "align" | "jev" | "openai" | "report";
 export type StageState = "wait" | "run" | "pass" | "warn" | "fail" | "skip";
 export interface Stage { id: StageId; state: StageState; done?: number; total?: number }
+
+export type VideoStatus = "queued" | "running" | "done" | "failed";
+/** One video in the batch. Results live in memory for this window only. */
+export interface VideoItem {
+  id: string; path: string; name: string; status: VideoStatus;
+  thumb?: string; report?: ModerationReport; error?: string;
+  /** Whole-video verdict: the strictest across all windows and providers. */
+  verdict?: "allow" | "block" | "review";
+  startedAt?: number; finishedAt?: number;
+}

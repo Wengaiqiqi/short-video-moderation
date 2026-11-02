@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from short_video_moderation.desktop import default_settings, start_moderation
+from short_video_moderation.desktop import default_settings, list_videos, start_moderation, video_thumbnail
 
 
 class DesktopTests(unittest.TestCase):
@@ -24,6 +24,37 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual([e['type'] for e in events], ['worker.ready', 'worker.error', 'worker.error'])
         self.assertNotIn('llm_api_key', events[0]['settings'])
         self.assertIn('short-video-moderation', events[0]['settings']['output_root'])
+
+    def test_folder_listing_keeps_only_videos(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('b.MP4', 'a.mov', 'notes.txt', 'c.webm'):
+                (root / name).write_bytes(b'')
+            (root / 'nested.mp4').mkdir()
+            self.assertEqual([Path(p).name for p in list_videos(directory)], ['a.mov', 'b.MP4', 'c.webm'])
+            with self.assertRaises(FileNotFoundError):
+                list_videos(root / 'missing')
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'FFmpeg required')
+    def test_thumbnail_is_jpeg_data_url_and_worker_reports_bad_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            video = Path(directory) / 'short.mp4'
+            subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+                            '-i', 'color=c=red:s=320x180:d=0.5:r=10', '-c:v', 'libx264', str(video)],
+                           capture_output=True, check=True)
+            url = video_thumbnail(video)
+            self.assertTrue(url.startswith('data:image/jpeg;base64,'))
+            commands = '\n'.join(json.dumps(c) for c in [
+                {'action': 'thumbnail', 'payload': {'id': 'ok', 'video_path': str(video)}},
+                {'action': 'thumbnail', 'payload': {'id': 'bad', 'video_path': str(Path(directory) / 'none.mp4')}},
+                {'action': 'list_videos', 'payload': {'directory': directory}}]) + '\n'
+            result = subprocess.run([sys.executable, '-m', 'short_video_moderation.worker'], input=commands,
+                                    capture_output=True, text=True, encoding='utf-8', timeout=30, check=True,
+                                    env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+            events = {e.get('id', e['type']): e for e in map(json.loads, result.stdout.splitlines())}
+            self.assertTrue(events['ok']['data_url'].startswith('data:image/jpeg'))
+            self.assertIn('error', events['bad'])
+            self.assertEqual([Path(p).name for p in events['videos.listed']['videos']], ['short.mp4'])
 
     def test_upload_confirmation_is_required_before_preparation(self):
         events = []

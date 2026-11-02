@@ -7,88 +7,93 @@ import Pipeline from "./components/Pipeline";
 import Results from "./components/Results";
 import TaskPanel, { type TaskForm } from "./components/TaskPanel";
 import TopBar from "./components/TopBar";
-import { DEMO_VIDEO } from "./demo";
-import { segmentsOf, visibleProviders, type ProviderFilter } from "./lib/report";
+import { segmentsOf, stageProgress, visibleProviders, type ProviderFilter, type Verdict } from "./lib/report";
 import { useModeration } from "./useModeration";
-import type { Stage, StageId } from "./types";
-
-/** Rough share of the whole run, for the hairline under the top bar. */
-function progressOf(stages: Record<StageId, Stage>, busy: boolean, finished: boolean) {
-  if (finished) return 1;
-  if (!busy) return 0;
-  const providers = (["jev", "openai"] as const).filter(id => stages[id].state !== "skip");
-  let value = stages.prepare.state === "run" ? 0.08 : stages.prepare.state === "pass" ? 0.24 : 0.02;
-  if (stages.align.state === "pass") value = 0.3;
-  for (const id of providers) {
-    const stage = stages[id];
-    const share = stage.state === "pass" || stage.state === "warn" ? 1 : stage.total ? (stage.done ?? 0) / stage.total : 0;
-    value += (0.68 / providers.length) * share;
-  }
-  return Math.min(0.99, value);
-}
 
 export default function App() {
-  const { preview, settings, setSettings, busy, engine, message, report, log, stages, run, start } = useModeration();
-  const [form, setForm] = useState<TaskForm>({ video: "", provider: "both", modality: "multimodal", key: "", interval: 0.5, seconds: 8, consent: false });
+  const m = useModeration();
+  const { preview, settings, setSettings, busy, videos, queueActive, stages } = m;
+  const [form, setForm] = useState<TaskForm>({ provider: "both", modality: "multimodal", key: "", interval: 0.5, seconds: 8, consent: false });
   const [error, setError] = useState("");
   const [collapsed, setCollapsed] = useState(false);
+  const [bin, setBin] = useState<Verdict | null>(null);
+  const [videoId, setVideoId] = useState<string | null>(null);
+  const [segmentId, setSegmentId] = useState<number | null>(null);
   const [filter, setFilter] = useState<ProviderFilter>("all");
-  const [selected, setSelected] = useState<number | null>(null);
   const update = (patch: Partial<TaskForm>) => setForm(f => ({ ...f, ...patch }));
 
-  const providers = useMemo(() => visibleProviders(report, filter), [report, filter]);
-  const segments = useMemo(() => segmentsOf(report, providers), [report, providers]);
-  const segment = segments.find(s => s.id === selected) ?? null;
-  const cloudAsr = (run?.asrEngine ?? settings?.asr_engine) === "mimo-cloud";
+  const video = videos.find(v => v.id === videoId) ?? null;
+  const providers = useMemo(() => visibleProviders(video?.report, filter), [video, filter]);
+  const segment = useMemo(() => segmentsOf(video?.report, providers).find(s => s.id === segmentId) ?? null, [video, providers, segmentId]);
+  const cloudAsr = (m.batch?.asrEngine ?? settings?.asr_engine) === "mimo-cloud";
 
-  async function browse(directory: boolean) {
-    if (preview) { if (!directory) update({ video: DEMO_VIDEO }); return; }
+  function selectVideo(id: string | null) { setVideoId(id); setSegmentId(null); setFilter("all"); }
+  function selectBin(next: Verdict | null) { setBin(next); setVideoId(null); setSegmentId(null); }
+
+  async function addFiles() {
+    setError("");
+    if (preview) { m.addVideos([]); return; }
     try {
-      const path = await open(directory ? { directory: true, multiple: false } : { multiple: false, filters: [{ name: "视频", extensions: ["mp4", "mkv", "mov", "webm"] }] });
-      if (typeof path === "string") {
-        if (directory && settings) setSettings({ ...settings, output_root: path });
-        else update({ video: path });
-      }
+      const picked = await open({ multiple: true, filters: [{ name: "视频", extensions: ["mp4", "mkv", "mov", "webm"] }] });
+      if (Array.isArray(picked)) m.addVideos(picked);
+      else if (typeof picked === "string") m.addVideos([picked]);
     } catch (e) { setError(String(e)); }
   }
-
-  function submit() {
+  async function addFolder() {
     setError("");
-    if (!settings || !form.video.trim() || !settings.output_root.trim() || !form.consent) {
-      setError("请选择视频和结果目录，并确认发送内容。");
-      return;
-    }
-    setSelected(null); setFilter("all");
-    void start({ video_path: form.video, output_root: settings.output_root, provider: form.provider, modality: form.modality,
-                 jev_key: form.key, interval: form.interval, segment_seconds: form.seconds, settings, upload_consent: form.consent });
+    if (preview) { void m.addFolder(); return; }
+    try {
+      const picked = await open({ directory: true, multiple: false });
+      if (typeof picked === "string") void m.addFolder(picked);
+    } catch (e) { setError(String(e)); }
+  }
+  async function browseOutput() {
+    if (preview || !settings) return;
+    try {
+      const picked = await open({ directory: true, multiple: false });
+      if (typeof picked === "string") setSettings({ ...settings, output_root: picked });
+    } catch (e) { setError(String(e)); }
+  }
+  function start() {
+    setError("");
+    if (!settings || !settings.output_root.trim() || !form.consent) { setError("请选择结果目录，并确认发送内容。"); return; }
+    if (!videos.some(v => v.status === "queued")) { setError("请先添加视频。"); return; }
+    m.startQueue({ output_root: settings.output_root, provider: form.provider, modality: form.modality, jev_key: form.key,
+                   interval: form.interval, segment_seconds: form.seconds, settings, upload_consent: form.consent });
   }
 
-  const progress = progressOf(stages, busy, !!report && !busy);
+  const pending = videos.filter(v => v.status === "queued" || v.status === "running").length;
+  const total = videos.filter(v => v.status !== "queued" || queueActive).length;
+  const done = videos.filter(v => v.status === "done" || v.status === "failed").length;
+  const progress = queueActive && total ? Math.min(1, (done + (busy ? stageProgress(stages) : 0)) / total) : done && !pending ? 1 : 0;
+
   return <div className={`app${collapsed ? " collapsed" : ""}`}>
-    <TopBar preview={preview} engine={engine} busy={busy} report={report} visible={providers}
-      segmentsKnown={stages.jev.total ?? stages.openai.total} filter={filter} onFilter={setFilter}
-      run={run} video={run?.video ?? form.video} />
-    <div className="progress-line" role="progressbar" aria-label="审核进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+    <TopBar preview={preview} engine={m.engine} busy={busy} videos={videos} batch={m.batch} queueActive={queueActive} />
+    <div className="progress-line" role="progressbar" aria-label="队列进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
       <i style={{ width: `${progress * 100}%` }} className={busy ? "busy" : undefined} />
     </div>
     <div className="workspace">
-      <TaskPanel form={form} update={update} settings={settings} setSettings={setSettings} busy={busy} error={error} preview={preview}
-        collapsed={collapsed} onCollapse={setCollapsed} onBrowse={d => { void browse(d); }} onSubmit={submit} />
+      <TaskPanel form={form} update={update} settings={settings} setSettings={setSettings} videos={videos} queueActive={queueActive}
+        busy={busy} error={error} preview={preview} collapsed={collapsed} onCollapse={setCollapsed}
+        onAddFiles={() => { void addFiles(); }} onAddFolder={() => { void addFolder(); }} onAddPath={path => m.addVideos([path])}
+        onBrowseOutput={() => { void browseOutput(); }} onRemove={m.removeVideo} onClearQueued={m.clearQueued}
+        onStart={start} onStop={m.stopQueue} />
       <section className="panel flow-panel">
         <header className="panel-head">
-          <span><b>SIGNAL MAP</b> · 片段流向{preview && report && <span className="tag demo">DEMO 数据</span>}</span>
-          <span className="meta">左：按时长排布的审核窗口（自上而下即视频时间）→ 中：处理阶段 → 右：判定</span>
+          <span><b>SIGNAL MAP</b> · 视频流向{preview && <span className="tag demo">DEMO 数据</span>}</span>
+          <span className="meta">左：待审视频 → 中：处理阶段 → 右：判定（点击查看）</span>
         </header>
-        <FlowMap report={report} providers={providers} stages={stages} busy={busy} selected={selected} onSelect={setSelected}
+        <FlowMap videos={videos} stages={stages} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin}
           meta={{ interval: form.interval, segmentSeconds: form.seconds, cloud: cloudAsr,
                   asr: cloudAsr ? `MiMo ${settings?.mimo_model ?? ""}` : `whisper ${settings?.asr_model ?? ""}` }} />
       </section>
     </div>
     <div className="dock">
-      <Feed log={log} />
-      <Pipeline stages={stages} message={message} />
-      <Results report={report} providers={providers} segments={segments} selected={selected} onSelect={setSelected} preview={preview} />
-      <Detail report={report} providers={providers} segment={segment} cloudAsr={cloudAsr} />
+      <Feed log={m.log} />
+      <Pipeline stages={stages} message={m.message} />
+      <Results videos={videos} video={video} onVideo={selectVideo} bin={bin} onBin={selectBin}
+        segment={segmentId} onSegment={setSegmentId} filter={filter} onFilter={setFilter} preview={preview} />
+      <Detail video={video} providers={providers} segment={segment} cloudAsr={cloudAsr} />
     </div>
   </div>;
 }

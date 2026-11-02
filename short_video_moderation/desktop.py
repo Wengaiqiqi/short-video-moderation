@@ -1,12 +1,15 @@
 """Application service used by the desktop JSON-line worker."""
 import asyncio
+import base64
 import json
 import os
+import subprocess
 import threading
 import time
 from importlib.resources import files
 from pathlib import Path
 
+from .media import FFmpegTools, _SUBPROCESS_KWARGS
 from .paths import runtime_root
 from .pipeline import prepare, run_models
 from .providers import ProviderConfig
@@ -14,6 +17,7 @@ from .sampling import SamplingConfig
 from .transcription import TranscriptionConfig
 
 _lock = threading.Lock()
+VIDEO_EXTENSIONS = ('.mp4', '.mkv', '.mov', '.webm')
 
 
 def load_defaults():
@@ -42,6 +46,30 @@ def transcription_config(settings):
     )
     config.validate()
     return config
+
+
+def list_videos(directory):
+    """Videos directly inside a folder (not recursive), sorted by name."""
+    folder = Path(str(directory or '')).expanduser()
+    if not folder.is_dir():
+        raise FileNotFoundError(f'文件夹不存在：{folder}')
+    return sorted((str(p) for p in folder.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS),
+                  key=lambda p: Path(p).name.lower())
+
+
+def video_thumbnail(video, ffmpeg_path=None, width=192):
+    """Cover image as a JPEG data URL; tries 1s in, then the first frame for very short clips."""
+    ffmpeg = FFmpegTools._resolve(ffmpeg_path or None, 'ffmpeg')
+    if not Path(video).is_file():
+        raise FileNotFoundError(f'视频文件不存在：{video}')
+    for offset in ('1', '0'):
+        result = subprocess.run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-ss', offset, '-i', str(video),
+                                 '-frames:v', '1', '-vf', f'scale={int(width)}:-2', '-f', 'image2pipe',
+                                 '-vcodec', 'mjpeg', '-q:v', '5', '-'],
+                                capture_output=True, timeout=30, **_SUBPROCESS_KWARGS)
+        if result.returncode == 0 and result.stdout:
+            return 'data:image/jpeg;base64,' + base64.b64encode(result.stdout).decode('ascii')
+    raise ValueError('无法读取视频封面')
 
 
 def start_moderation(payload, emit):
@@ -84,11 +112,11 @@ def start_moderation(payload, emit):
             )
             report = asyncio.run(run_models(manifest, load_defaults()['policy'], providers, destination,
                                            keys=keys, modality=modality, progress=progress))
-            emit('moderation.completed', message=report['report_path'], report=report)
+            emit('moderation.completed', message=report['report_path'], report=report, video_path=payload.get('video_path'))
         except Exception as error:
             # Do not relay network response bodies (which may echo credentials).
             message = str(error) if isinstance(error, (ValueError, FileNotFoundError)) else f'处理失败（{type(error).__name__}），请检查模型配置和视频后重试。'
-            emit('moderation.failed', error=message)
+            emit('moderation.failed', error=message, video_path=payload.get('video_path'))
         finally:
             _lock.release()
 

@@ -23,7 +23,7 @@ npm run dev
 
 `npm run setup` 将前端依赖安装在运行目录，通过目录链接连接源码；Windows 默认运行目录为 `D:\Codex data\tmp\short-video-moderation`，缓存目录为 `D:\Codex data\home\.cache`。`SVM_RUNTIME_ROOT`、`SVM_CACHE_ROOT` 可覆盖这些路径。桌面开发端口为 `5174`。前端单独构建使用 `npm run build`。
 
-界面为深色控制台布局：左侧任务配置（任务/模型/语音/系统），中间「片段流向」图把审核窗口按时长排进半圆（自上而下即视频时间），经画面切分、语音识别、分类判断三段流向「通过 / 拦截 / 待定」，底部为事件流水、流程阶段、片段判定表和片段详情。失败片段归入「待定」等待人工复核。API Key 仅保存在当前窗口内；也可设置 `TYPESAFE_API_KEY`、`LLM_API_KEY`、`MIMO_API_KEY`。默认对照模型只是示例，需填写实际使用的模型名称及地址。
+界面为深色控制台布局。左侧是任务配置（任务/模型/语音/系统）和视频队列：可多选视频或加入整个文件夹（不含子文件夹），按顺序逐个审核。中间「视频流向」图中，待审视频以封面方块逐层排进半圆；审核完成的视频化为流线，经画面切分、语音识别、分类判断落入「通过 / 拦截 / 待定」。整段视频取最严结论：任一片段被任一模型拦截即为拦截，有待定或失败片段则为待定。点击判定格可列出其中的视频，点击视频可查看逐段结果。结果只保存在当前窗口内存中，报告文件仍写入结果目录。API Key 仅保存在当前窗口内；也可设置 `TYPESAFE_API_KEY`、`LLM_API_KEY`、`MIMO_API_KEY`。默认对照模型只是示例，需填写实际使用的模型名称及地址。
 
 ## 命令行
 
@@ -43,10 +43,10 @@ python -m short_video_moderation evaluate 'D:\Codex data\tmp\short-video-moderat
 ## 页面重设计入口
 
 - `desktop/src/App.tsx`：整体布局与任务表单状态。
-- `desktop/src/components/FlowMap.tsx`：中间的片段流向图（半圆砖块 → 处理阶段 → 判定分箱）。
+- `desktop/src/components/FlowMap.tsx`：中间的视频流向图（半圆封面方块 → 处理阶段 → 判定格）。
 - `desktop/src/components/TaskPanel.tsx`、`ModelSettings.tsx`：任务与模型/ASR/系统配置。
 - `desktop/src/components/TopBar.tsx`、`Feed.tsx`、`Pipeline.tsx`、`Results.tsx`、`Detail.tsx`：指标栏与底部面板。
-- `desktop/src/useModeration.ts`：后台连接、事件流水与阶段进度；`desktop/src/lib/report.ts`：报告统计与格式化。
+- `desktop/src/useModeration.ts`：后台连接、视频队列、事件流水与阶段进度；`desktop/src/lib/report.ts`：报告统计与格式化。
 - `desktop/src/types.ts`：界面数据类型；`desktop/src/styles.css`：配色与布局变量。
 
 `npm --prefix desktop run web:dev` 可在浏览器中预览界面：不在 Tauri 中运行时自动使用 `desktop/src/demo.ts` 的模拟事件和示例报告，界面处处标注 DEMO，不连接引擎也不产生真实审核结果。

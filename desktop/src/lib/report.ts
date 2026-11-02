@@ -123,3 +123,34 @@ export function baseName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 export function pad2(n: number) { return String(n).padStart(2, "0"); }
+
+/**
+ * Whole-video verdict, strictest wins: any window blocked by any provider → block;
+ * otherwise any review or failed window (or no windows at all) → review; else allow.
+ */
+export function videoVerdict(report: ModerationReport | null | undefined): Verdict {
+  let verdict: Verdict = "allow";
+  let rows = 0;
+  for (const result of Object.values(report?.providers ?? {})) {
+    for (const row of result.segments) {
+      rows += 1;
+      const v = verdictOf(row);
+      if (SEVERITY[v] > SEVERITY[verdict]) verdict = v;
+    }
+  }
+  return rows ? verdict : "review";
+}
+export const VERDICT_ZH: Record<Verdict, string> = { allow: "通过", block: "拦截", review: "待定" };
+
+/** Rough share of one video's run, from the stage list (prepare → align → providers). */
+export function stageProgress(stages: Record<string, { state: string; done?: number; total?: number }>) {
+  const providers = (["jev", "openai"] as const).filter(id => stages[id] && stages[id].state !== "skip");
+  let value = stages.prepare?.state === "run" ? 0.08 : stages.prepare?.state === "pass" ? 0.24 : 0.02;
+  if (stages.align?.state === "pass") value = 0.3;
+  for (const id of providers) {
+    const stage = stages[id];
+    const share = stage.state === "pass" || stage.state === "warn" ? 1 : stage.total ? (stage.done ?? 0) / stage.total : 0;
+    value += (0.68 / providers.length) * share;
+  }
+  return Math.min(0.99, value);
+}
