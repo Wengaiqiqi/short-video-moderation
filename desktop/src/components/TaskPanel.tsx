@@ -9,9 +9,8 @@ export interface TaskForm {
   interval: number; seconds: number;
 }
 type Tab = "task" | "rules" | "models" | "asr" | "system";
-const TABS: { id: Tab; en: string; zh: string }[] = [
-  { id: "task", en: "TASK", zh: "任务" }, { id: "rules", en: "RULES", zh: "规则" }, { id: "models", en: "MODELS", zh: "模型" },
-  { id: "asr", en: "ASR", zh: "语音" }, { id: "system", en: "SYS", zh: "系统" },
+const TABS: { id: Tab; zh: string }[] = [
+  { id: "task", zh: "任务" }, { id: "rules", zh: "规则" }, { id: "models", zh: "模型" }, { id: "asr", zh: "语音" }, { id: "system", zh: "系统" },
 ];
 const STATUS: Record<VideoItem["status"], string> = { queued: "排队", running: "审核中", done: "完成", failed: "失败", cancelled: "已取消" };
 
@@ -53,7 +52,7 @@ export default function TaskPanel(props: Props) {
     </header>
     <div className="tabs" role="tablist" aria-label="配置分组">
       {TABS.map(t => <button key={t.id} type="button" role="tab" id={`tab-${t.id}`} aria-selected={tab === t.id} aria-controls="task-tabpanel"
-        className={tab === t.id ? "on" : undefined} onClick={() => setTab(t.id)}><b>{t.en}</b>{t.zh}</button>)}
+        className={tab === t.id ? "on" : undefined} onClick={() => setTab(t.id)}>{t.zh}</button>)}
     </div>
     <form className="task-form" onSubmit={e => { e.preventDefault(); if (queueActive) props.onStop(); else props.onStart(); }}>
       <div className="task-scroll" id="task-tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
@@ -66,7 +65,7 @@ export default function TaskPanel(props: Props) {
               <button type="button" onClick={props.onAddFolder} disabled={!settings}>＋ 整个文件夹</button>
             </div>
             <div className="path-field compact">
-              <input aria-label="视频路径" value={path} spellCheck={false} placeholder={preview ? "DEMO：用上方按钮添加" : "粘贴视频路径"}
+              <input aria-label="视频路径" value={path} spellCheck={false} placeholder={preview ? "演示模式：用上方按钮添加" : "粘贴视频路径"}
                 onChange={e => setPath(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (path.trim()) { props.onAddPath(path); setPath(""); } } }} />
               <button type="button" disabled={!path.trim()} onClick={() => { props.onAddPath(path); setPath(""); }}>加入</button>
@@ -126,7 +125,7 @@ export default function TaskPanel(props: Props) {
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="foot-row">
           <button className={`primary${queueActive ? " stop" : ""}`} type="submit" disabled={!settings || (!queueActive && queued === 0)}>
-            {queueActive ? "暂停队列" : `${preview ? "运行 DEMO" : "开始审核"} · ${queued} 个视频`}
+            {queueActive ? "暂停队列" : `${preview ? "运行演示" : "开始审核"} · ${queued} 个视频`}
           </button>
           {props.running > 0 && <button type="button" className="primary danger" onClick={props.onCancelAll} title="暂停队列并立即取消所有进行中的视频">全部停止</button>}
         </div>

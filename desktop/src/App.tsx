@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import Calibration from "./components/Calibration";
 import Detail from "./components/Detail";
@@ -34,8 +34,23 @@ function exportRows(videos: VideoItem[]) {
   })];
 }
 
+type Theme = "dark" | "light";
+/** Remembered choice, else the system preference. */
+function initialTheme(): Theme {
+  try {
+    const saved = localStorage.getItem("svm-theme");
+    if (saved === "dark" || saved === "light") return saved;
+  } catch { /* storage unavailable */ }
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
 export default function App() {
   const m = useModeration();
+  const [theme, setTheme] = useState<Theme>(initialTheme);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("svm-theme", theme); } catch { /* storage unavailable */ }
+  }, [theme]);
   const { preview, settings, setSettings, busy, videos, queueActive, stagesById } = m;
   const [form, setForm] = useState<TaskForm>({ provider: "both", modality: "multimodal", interval: 0.5, seconds: 8 });
   const [error, setError] = useState("");
@@ -140,7 +155,8 @@ export default function App() {
     ?? [...videos].reverse().find(v => stagesById[v.id]) ?? null;
 
   return <div className={`app${collapsed ? " collapsed" : ""}`}>
-    <TopBar preview={preview} engine={m.engine} busy={busy} videos={videos} batch={m.batch} queueActive={queueActive} limit={m.limit} />
+    <TopBar preview={preview} engine={m.engine} busy={busy} videos={videos} batch={m.batch} queueActive={queueActive} limit={m.limit}
+      calibrated={settings?.policy?.calibrated_at} theme={theme} onTheme={setTheme} />
     <div className="progress-line" role="progressbar" aria-label="队列进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
       <i style={{ width: `${progress * 100}%` }} className={busy ? "busy" : undefined} />
     </div>
@@ -153,7 +169,7 @@ export default function App() {
         onCancel={m.cancelVideo} onCancelAll={m.cancelAll} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }} />
       <section className="panel flow-panel">
         <header className="panel-head">
-          <span><b>视频流向</b>{preview && <span className="tag demo">DEMO</span>}</span>
+          <span><b>视频流向</b>{preview && <span className="tag demo">演示数据</span>}</span>
         </header>
         <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin}
           meta={{ interval: form.interval, segmentSeconds: form.seconds, cloud: cloudAsr,
@@ -181,6 +197,7 @@ export default function App() {
     {calibrating && settings && <Calibration videos={videos} policy={settings.policy} onClose={() => setCalibrating(false)}
       onImport={importLabels}
       onApply={patch => settings.policy && setSettings({ ...settings, policy: { ...settings.policy, ...patch,
+        calibrated_at: new Date().toLocaleDateString("zh-CN"),
         review_threshold: Math.round(Math.min(patch.review_threshold ?? settings.policy.review_threshold,
                                               (patch.block_threshold ?? settings.policy.block_threshold) - 0.05) * 100) / 100 } })} />}
   </div>;

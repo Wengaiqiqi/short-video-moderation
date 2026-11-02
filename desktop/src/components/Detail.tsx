@@ -65,7 +65,7 @@ export default function Detail({ video, videos, providers, segment, cloudAsr, se
         <div><dt>本批用量</dt><dd><CostLine cost={total} /></dd></div>
       </dl>
       <ul className="caveats">
-        <li>阈值未校准</li>
+        <li className={settings?.policy?.calibrated_at ? "ok" : undefined}>{settings?.policy?.calibrated_at ? `阈值已于 ${settings.policy.calibrated_at} 校准` : "阈值未校准"}</li>
         <li>JEV 概率 ≠ 对照自报分数</li>
         <li>片段范围 ≠ 违规时刻</li>
         {cloudAsr && <li className="warn">云端 ASR 时间为语音段级</li>}

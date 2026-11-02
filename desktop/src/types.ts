@@ -29,6 +29,8 @@ export interface ModerationRow {
 }
 export interface ModerationPolicy {
   version?: string;
+  /** Set when thresholds were applied from the calibration dialog; cleared by manual edits. */
+  calibrated_at?: string;
   review_threshold: number; block_threshold: number;
   categories: Record<string, CategoryRule>;
 }

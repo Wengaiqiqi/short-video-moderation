@@ -67,7 +67,7 @@ function Comet({ d, tone, delay = 0, duration, loop = false, width = 1 }: {
   </g>;
 }
 
-const STATE_TEXT: Record<StageState, string> = { wait: "WAIT", run: "RUN", pass: "PASS", warn: "WARN", fail: "FAIL", skip: "SKIP" };
+const STATE_TEXT: Record<StageState, string> = { wait: "等待", run: "进行中", pass: "完成", warn: "完成（有失败）", fail: "失败", skip: "跳过" };
 
 export default function FlowMap({ videos, stagesById, selected, onSelect, bin, onBin, meta }: Props) {
   const [box, { width: W, height: H }] = useSize<HTMLDivElement>();
@@ -220,7 +220,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
 
     {geometry && <>
       {placed.length === 0 && <div className="disc-note" style={{ left: geometry.cx + geometry.R * 0.1, top: geometry.cy - 26, width: geometry.R * 0.82 }}>
-        {landed.length ? <><b>QUEUE CLEAR</b><span>{landed.length} 个已归类</span></> : <><b>NO INPUT</b><span>等待视频</span></>}
+        {landed.length ? <><b>队列已清空</b><span>{landed.length} 个已归类</span></> : <><b>暂无视频</b><span>添加视频后开始</span></>}
       </div>}
 
       {placed.map(({ video, slot }) => {
@@ -247,11 +247,11 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
 
       {/* Stages: 画面切分 (top) and 语音识别 (bottom) run in parallel and merge into 分类判断 (middle) */}
       {[
-        { key: "frames" as const, no: "01", zh: "画面切分", en: "FRAME SPLIT", y: geometry.y.top, tall: false,
+        { key: "frames" as const, no: "01", zh: "画面切分", y: geometry.y.top, tall: false,
           sub: `${meta.interval}s · 场景补帧`, count: preparing },
-        { key: "classify" as const, no: "03", zh: "分类判断", en: "CLASSIFY", y: geometry.y.mid, tall: true,
+        { key: "classify" as const, no: "03", zh: "分类判断", y: geometry.y.mid, tall: true,
           sub: `≤${meta.segmentSeconds}s 窗口 · 取最严`, count: classifying },
-        { key: "asr" as const, no: "02", zh: "语音识别", en: "ASR", y: geometry.y.bot, tall: false,
+        { key: "asr" as const, no: "02", zh: "语音识别", y: geometry.y.bot, tall: false,
           sub: meta.cloud ? `${meta.asr} · 静音切分` : meta.asr, count: asrBusy },
       ].map(stage => {
         const s = state[stage.key];
@@ -259,7 +259,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
           style={{ left: geometry.midX, top: stage.y - (stage.tall ? 29 : 25), width: geometry.midW }}>
           <span className="stage-no">{stage.no}</span>
           <div className="stage-body">
-            <div className="stage-title"><b>{stage.zh}</b><em>{stage.en}</em></div>
+            <div className="stage-title"><b>{stage.zh}</b></div>
             <div className="stage-sub">{stage.sub}</div>
           </div>
           <span className="stage-state" title={STATE_TEXT[s]}><i />{s === "run" ? stage.count : ""}</span>
@@ -278,8 +278,8 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
         return <div key={v.id} className={`bin v-${v.id}${bin === v.id ? " on" : ""}`} style={{ left: b.x, top: b.y, width: b.w, height: b.h }}>
           <button type="button" className="bin-hit" aria-pressed={bin === v.id} onClick={() => onBin(bin === v.id ? null : v.id)}
             aria-label={`${v.zh}：${items.length} 个视频，点击查看列表`} />
-          <div className="bin-head"><span className="bin-en">{v.en}</span><span className="bin-count">×{items.length}</span></div>
-          <div className="bin-zh">{v.zh}{failed > 0 && <small className="bin-failed">失败 {failed}</small>}</div>
+          <div className="bin-head"><span className="bin-zh">{v.zh}{failed > 0 && <small className="bin-failed">失败 {failed}</small>}</span>
+            <span className="bin-count">×{items.length}</span></div>
           <div className="bin-thumbs">
             {items.length > shown.length && <span className="bin-more" style={{ width: thumb, height: thumb }}>+{items.length - shown.length}</span>}
             {shown.map(x => <button key={x.id} type="button" className={`bin-thumb${selected === x.id ? " selected" : ""}${x.status === "failed" ? " failed" : ""}${x.review ? " reviewed" : ""}`}

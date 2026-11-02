@@ -79,7 +79,7 @@ export function useModeration() {
     const s = settingsRef.current;
     void send({ action: "thumbnail", payload: { id: item.id, video_path: item.path, ffmpeg_path: s?.ffmpeg_path || null,
                                                 ffprobe_path: s?.ffprobe_path || null } })
-      .catch(error => append("warn", "COVER", String(error)));
+      .catch(error => append("warn", "封面", String(error)));
   }, [append, patchVideo, preview, send]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addPaths = useCallback((paths: string[]) => {
@@ -94,24 +94,24 @@ export function useModeration() {
     if (!fresh.length) return;
     videosRef.current = [...videosRef.current, ...fresh];
     setVideos(list => [...list, ...fresh]);
-    append("info", "QUEUE", `加入 ${fresh.length} 个视频`);
+    append("info", "队列", `加入 ${fresh.length} 个视频`);
     fresh.forEach(requestThumbnail);
   }, [append, requestThumbnail]);
 
   /** Replace a queued video longer than 10 minutes by its parts (cut at key frames, no re-encoding). */
   async function splitLong(item: VideoItem, duration: number) {
     const s = settingsRef.current;
-    append("info", "SPLIT", `${item.name} · ${Math.round(duration / 60)} 分钟，正在切分`);
+    append("info", "切分", `${item.name} · ${Math.round(duration / 60)} 分钟，正在切分`);
     const answer = await request("split_video", { id: item.id, video_path: item.path, duration_sec: duration, part_sec: 590,
                                                  ffmpeg_path: s?.ffmpeg_path || null, ffprobe_path: s?.ffprobe_path || null });
     const parts = (answer.parts as { path: string; start_sec: number; end_sec: number }[] | undefined) ?? [];
-    if (answer.error || !parts.length) { append("error", "SPLIT", `${item.name} · ${String(answer.error ?? "切分失败")}`); return; }
+    if (answer.error || !parts.length) { append("error", "切分", `${item.name} · ${String(answer.error ?? "切分失败")}`); return; }
     const pieces: VideoItem[] = parts.map((p, i) => ({
       id: `v${++sequence.current}`, path: p.path, name: `${item.name} · ${i + 1}/${parts.length}`, status: "queued",
       thumb: preview ? demoThumbnail(p.path) : videosRef.current.find(v => v.id === item.id)?.thumb ?? item.thumb,
       duration_sec: p.end_sec - p.start_sec, part: { index: i + 1, total: parts.length, start_sec: p.start_sec, end_sec: p.end_sec, source: item.path } }));
     setVideos(list => list.flatMap(v => v.id === item.id && v.status === "queued" ? pieces : [v]));
-    append("ok", "SPLIT", `${item.name} → ${parts.length} 段`);
+    append("ok", "切分", `${item.name} → ${parts.length} 段`);
     if (!preview) pieces.forEach(requestThumbnail);
   }
 
@@ -139,7 +139,7 @@ export function useModeration() {
           setSettings(s => s ?? { ...incoming, video_concurrency: incoming.video_concurrency ?? DEFAULT_VIDEO_CONCURRENCY });
         }
         setEngine("ready"); setMessage("就绪");
-        append("ok", "ENGINE", preview ? "浏览器预览：使用 DEMO 示例引擎" : "审核引擎就绪");
+        append("ok", "引擎", preview ? "浏览器预览：使用演示数据" : "审核引擎就绪");
         return;
       case "video.thumbnail": {
         const duration = typeof payload.duration_sec === "number" ? payload.duration_sec : undefined;
@@ -147,23 +147,23 @@ export function useModeration() {
         const item = videosRef.current.find(v => v.id === payload.id);
         if (item && duration && duration > LONG_VIDEO_SEC && !item.part && item.status === "queued") {
           if (settingsRef.current?.split_long_videos !== false) void splitLong(item, duration);
-          else append("warn", "LONG", `${item.name} 超过 10 分钟，未开启自动切分`);
+          else append("warn", "长视频", `${item.name} 超过 10 分钟，未开启自动切分`);
         }
         return;
       }
       case "videos.listed":
-        if (payload.error) { append("error", "FOLDER", String(payload.error)); return; }
-        if (!(payload.videos as string[] | undefined)?.length) { append("warn", "FOLDER", `文件夹中没有视频：${String(payload.directory ?? "")}`); return; }
+        if (payload.error) { append("error", "文件夹", String(payload.error)); return; }
+        if (!(payload.videos as string[] | undefined)?.length) { append("warn", "文件夹", `文件夹中没有视频：${String(payload.directory ?? "")}`); return; }
         addPaths(payload.videos as string[]);
         return;
       case "worker.error":
-        append("error", "ENGINE", text || "无效的后台命令");
+        append("error", "引擎", text || "无效的后台命令");
         return;
       case "moderation.cancel_requested":
         return;
       case "worker.exited":
         setEngine("error"); setQueueActive(false); setMessage(text);
-        append("error", "ENGINE", text || "审核引擎已退出");
+        append("error", "引擎", text || "审核引擎已退出");
         for (const id of [...active.current.keys()]) finish(id, { status: "failed", error: text || "审核引擎已退出", verdict: "review" });
         return;
     }
@@ -205,8 +205,8 @@ export function useModeration() {
           if (done === "0") append("run", providerLabel(provider), `${item.name} · 开始分类（${total} 段）`);
           else if (done === total) append("run", providerLabel(provider), `${item.name} · 分类完成`);
         } else if (asr) {
-          if (asr[1] === asr[2]) append("run", "ASR", `${item.name} · 语音识别 ${asr[2]} 段完成`);
-        } else append("run", "PIPELINE", `${item.name} · ${msg}`);
+          if (asr[1] === asr[2]) append("run", "语音", `${item.name} · 语音识别 ${asr[2]} 段完成`);
+        } else append("run", "流程", `${item.name} · ${msg}`);
         return;
       }
       case "moderation.completed": {
@@ -223,7 +223,7 @@ export function useModeration() {
           return next;
         });
         const incomplete = Object.entries(report?.providers ?? {}).filter(([, data]) => !data.complete);
-        if (incomplete.length) append("warn", "REVIEW", `${item.name} · ${incomplete.map(([p]) => providerLabel(p)).join("、")} 存在失败片段，需人工复核`);
+        if (incomplete.length) append("warn", "复核", `${item.name} · ${incomplete.map(([p]) => providerLabel(p)).join("、")} 存在失败片段，需人工复核`);
         append(verdict === "allow" ? "ok" : verdict === "block" ? "error" : "warn", payload.cached ? "已审" : VERDICT_ZH[verdict],
                `${item.name} → ${VERDICT_ZH[verdict]}${payload.cached ? "（复用此前结果）" : ""}`);
         finish(id, { status: "done", report, verdict, error: undefined, cached: !!payload.cached });
@@ -231,7 +231,7 @@ export function useModeration() {
       }
       case "moderation.cancelled":
         updateStages(id, s => Object.fromEntries(STAGE_ORDER.map(k => [k, s[k].state === "run" ? { ...s[k], state: "skip" } : s[k]])) as Stages);
-        append("warn", "CANCEL", `${item.name} · 已取消`);
+        append("warn", "取消", `${item.name} · 已取消`);
         // A cancelled re-run keeps the earlier result; a cancelled first run has none.
         finish(id, { status: item.report ? "done" : "cancelled" });
         return;
@@ -241,12 +241,12 @@ export function useModeration() {
           for (const stage of STAGE_ORDER) if (next[stage].state === "run") next[stage] = { ...next[stage], state: "fail" };
           return next;
         });
-        append("error", "FAILED", `${item.name} · ${text || "处理失败"}`);
+        append("error", "失败", `${item.name} · ${text || "处理失败"}`);
         finish(id, item.report ? { status: "done", error: text || "处理失败" } : { status: "failed", error: text || "处理失败", verdict: "review" });
         return;
       case "moderation.rejected":
         // The worker is at its limit: put the video back and pause the queue.
-        append("warn", "REJECT", `${item.name} · ${text}`);
+        append("warn", "拒绝", `${item.name} · ${text}`);
         active.current.delete(id);
         patchVideo(id, v => ({ status: v.report ? "done" : "queued", startedAt: undefined }));
         setQueueActive(false);
@@ -277,7 +277,7 @@ export function useModeration() {
       if (!alive) return;
       setEngine("error");
       setMessage(`连接失败：${String(error)}。请使用 npm run dev 打开桌面端。`);
-      append("error", "ENGINE", `连接失败：${String(error)}`);
+      append("error", "引擎", `连接失败：${String(error)}`);
     });
     return () => { alive = false; dispose?.(); };
   }, [append, handle, preview, send]);
@@ -306,13 +306,13 @@ export function useModeration() {
     patchVideo(item.id, { status: "running", startedAt: Date.now(), error: undefined });
     setStagesById(all => ({ ...all, [item.id]: freshStages(run.provider) }));
     const payload: ModerationRequest & Record<string, unknown> = { ...run, video_path: item.path, job_id: item.id, ...evaluate };
-    append("info", evaluate ? (evaluate.retry_failed ? "RETRY" : "RERUN") : "START", item.name);
+    append("info", evaluate ? (evaluate.retry_failed ? "重试" : "重审") : "开始", item.name);
     if (preview) {
       cancelDemo.current.set(item.id, evaluate ? simulateEvaluate(payload, handle) : simulateRun(payload, handle));
       return;
     }
     send({ action: evaluate ? "moderation_evaluate" : "moderation_start", payload }).catch(error => {
-      append("error", "ENGINE", String(error));
+      append("error", "引擎", String(error));
       finish(item.id, { status: "failed", error: String(error), verdict: "review" });
     });
   }, [append, finish, handle, patchVideo, preview, send]);
@@ -326,7 +326,7 @@ export function useModeration() {
       if (active.current.size === 0) {
         setQueueActive(false); setEngine(e => (e === "running" ? "ready" : e));
         setBatch(b => b && { ...b, finishedAt: Date.now() });
-        append("ok", "BATCH", "队列已全部审核完毕");
+        append("ok", "批次", "队列已全部审核完毕");
       }
       return;
     }
@@ -341,7 +341,7 @@ export function useModeration() {
   }
   function stopQueue() {
     setQueueActive(false);
-    append("warn", "QUEUE", "已暂停：正在审核的视频完成后不再继续");
+    append("warn", "队列", "已暂停：正在审核的视频完成后不再继续");
   }
   /** Stop one running video now (or take a queued one out). */
   function cancelVideo(id: string) {
@@ -356,7 +356,7 @@ export function useModeration() {
     setQueueActive(false);
     if (preview) { for (const id of [...active.current.keys()]) cancelVideo(id); }
     else void send({ action: "moderation_cancel", payload: {} });
-    append("warn", "CANCEL", "全部停止");
+    append("warn", "取消", "全部停止");
   }
   /** Put a failed or cancelled video back in the queue (full review again). */
   function requeue(id: string, run: RunConfig) {
@@ -379,7 +379,7 @@ export function useModeration() {
     const item = videosRef.current.find(v => v.id === id);
     if (!item?.report) return;
     const answer = await request("save_review", { report_path: item.report.report_path, decision, note });
-    if (answer.error) { append("error", "REVIEW", String(answer.error)); return; }
+    if (answer.error) { append("error", "复核", String(answer.error)); return; }
     patchVideo(id, { review: (answer.review as ReviewDecision | null) ?? null });
     append("ok", "人工", `${item.name} → ${decision ? VERDICT_ZH[decision] : "撤销终判"}`);
   }
@@ -388,7 +388,7 @@ export function useModeration() {
     const root = settingsRef.current?.output_root;
     if (!root) return;
     const answer = await request("list_history", { output_root: root });
-    if (answer.error) { append("error", "HISTORY", String(answer.error)); return; }
+    if (answer.error) { append("error", "历史", String(answer.error)); return; }
     const entries = (answer.entries as { report: ModerationReport; review: ReviewDecision | null; finished_at: number }[]) ?? [];
     const known = new Set(videosRef.current.map(v => v.report?.report_path).filter(Boolean));
     const fresh: VideoItem[] = entries.filter(e => !known.has(e.report.report_path)).map(e => ({
@@ -397,7 +397,7 @@ export function useModeration() {
       finishedAt: e.finished_at, duration_sec: e.report.duration_sec }));
     if (!fresh.length) return;
     setVideos(list => [...fresh, ...list]);
-    append("info", "HISTORY", `读取历史结果 ${fresh.length} 个`);
+    append("info", "历史", `读取历史结果 ${fresh.length} 个`);
     fresh.slice(0, 40).forEach(requestThumbnail);
   }
   // History is read once the engine is ready.
@@ -410,7 +410,7 @@ export function useModeration() {
     if (preview) { addPaths(demoVideos(12)); return; }
     if (!directory) return;
     try { await send({ action: "list_videos", payload: { directory } }); }
-    catch (error) { append("error", "FOLDER", String(error)); }
+    catch (error) { append("error", "文件夹", String(error)); }
   }
   function addVideos(paths: string[]) { addPaths(preview && !paths.length ? [...demoVideos(3), "D:/videos/demo/长视频-直播回放.mp4"] : paths); }
   function removeVideo(id: string) { setVideos(list => list.filter(v => v.id !== id || (v.status !== "queued" && v.status !== "cancelled"))); }

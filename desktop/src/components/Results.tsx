@@ -131,7 +131,7 @@ function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, p
           {split.size > 0 && <button type="button" className={onlySplit ? "on" : "c-review"} aria-pressed={onlySplit}
             onClick={() => setOnlySplit(x => !x)} title="只看两组模型结论不一致的片段">分歧 {split.size}</button>}
         </span>}
-        {report && <button type="button" className="link-button" disabled={preview} title={preview ? "DEMO 预览没有报告文件" : report.report_path}
+        {report && <button type="button" className="link-button" disabled={preview} title={preview ? "演示模式没有报告文件" : report.report_path}
           onClick={() => { setError(""); void openPath(report.report_path).catch(e => setError(String(e))); }}>报告 ↗</button>}
       </span>
     </header>
