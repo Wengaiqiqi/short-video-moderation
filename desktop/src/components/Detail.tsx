@@ -21,7 +21,7 @@ export default function Detail({ video, providers, segment, cloudAsr }: {
   const limits = thresholds(report);
   const categories = categoriesOf(report);
   if (segment) return <section className="panel dock-panel">
-    <header className="panel-head"><span><b>SEG {pad2(segment.id)}</b> · 片段详情</span>
+    <header className="panel-head"><span><b>SEG {pad2(segment.id)}</b></span>
       <span className="meta">{fmtTime(segment.start)}–{fmtTime(segment.end)} · {(segment.end - segment.start).toFixed(1)}s</span></header>
     <div className="detail">
       {providers.map(provider => {
@@ -51,7 +51,7 @@ export default function Detail({ video, providers, segment, cloudAsr }: {
   if (video) {
     const counts = tally(report, providersOf(report));
     return <section className="panel dock-panel">
-      <header className="panel-head"><span><b>VIDEO</b> · 视频概要</span><VideoTag video={video} /></header>
+      <header className="panel-head"><span><b>VIDEO</b></span><VideoTag video={video} /></header>
       <div className="detail">
         {video.thumb && <img className="detail-cover" src={video.thumb} alt="" />}
         <dl className="facts">
@@ -69,7 +69,7 @@ export default function Detail({ video, providers, segment, cloudAsr }: {
   }
 
   return <section className="panel dock-panel">
-    <header className="panel-head"><span><b>SUMMARY</b> · 运行说明</span></header>
+    <header className="panel-head"><span><b>SUMMARY</b></span></header>
     <div className="detail">
       <dl className="facts">
         <div><dt>阈值</dt><dd>复核 ≥ {limits.review.toFixed(2)} · 拦截 ≥ {limits.block.toFixed(2)}</dd></div>

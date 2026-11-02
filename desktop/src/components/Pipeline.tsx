@@ -11,7 +11,7 @@ export default function Pipeline({ stages, message, video, running }: {
   stages: Record<StageId, Stage>; message: string; video?: string; running: number;
 }) {
   return <section className="panel dock-panel">
-    <header className="panel-head"><span><b>PIPELINE</b> · 流程阶段</span>
+    <header className="panel-head"><span><b>PIPELINE</b></span>
       <span className="meta" title={video}>{video ? `${video}` : "—"}{running > 1 ? ` · 并行 ${running}` : ""}</span></header>
     <ul className="pipeline">
       {STAGE_ORDER.map(id => {

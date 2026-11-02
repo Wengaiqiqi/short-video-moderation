@@ -1,6 +1,6 @@
 export interface Settings {
   output_root: string;
-  jev_base_url: string; jev_model: string;
+  jev_base_url: string; jev_model: string; jev_api_key?: string;
   llm_base_url: string; llm_model: string; llm_api_key?: string;
   asr_engine: "faster-whisper" | "mimo-cloud";
   asr_model: string; asr_language: string; asr_device: string; asr_compute_type: string;

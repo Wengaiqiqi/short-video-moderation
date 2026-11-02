@@ -44,7 +44,7 @@ function VideoList({ videos, onVideo, bin, onBin }: Props) {
   const finished = videos.filter(v => v.status === "done" || v.status === "failed");
   const rows = bin ? finished.filter(v => v.verdict === bin) : finished;
   return <section className="panel dock-panel">
-    <header className="panel-head"><span><b>RESULTS</b> · 视频结果</span>
+    <header className="panel-head"><span><b>RESULTS</b></span>
       <span className="chips" role="group" aria-label="按判定筛选">
         <button type="button" className={!bin ? "on" : undefined} aria-pressed={!bin} onClick={() => onBin(null)}>全部 {finished.length}</button>
         {VERDICTS.map(v => <button key={v.id} type="button" className={`c-${v.id}${bin === v.id ? " on" : ""}`} aria-pressed={bin === v.id}

@@ -5,7 +5,7 @@ import type { ModerationRequest, Settings, VideoItem } from "../types";
 
 export interface TaskForm {
   provider: ModerationRequest["provider"]; modality: ModerationRequest["modality"];
-  key: string; interval: number; seconds: number; consent: boolean;
+  interval: number; seconds: number;
 }
 type Tab = "task" | "models" | "asr" | "system";
 const TABS: { id: Tab; en: string; zh: string }[] = [
@@ -41,7 +41,7 @@ export default function TaskPanel(props: Props) {
   }
   return <aside className="panel task-panel">
     <header className="panel-head">
-      <span><b>TASK</b> · 审核任务</span>
+      <span><b>TASK</b></span>
       <button type="button" className="icon-button" onClick={() => onCollapse(true)} aria-label="收起任务配置" title="收起">«</button>
     </header>
     <div className="tabs" role="tablist" aria-label="配置分组">
@@ -91,8 +91,6 @@ export default function TaskPanel(props: Props) {
                 options={[{ value: "both", label: "JEV ＋ 对照" }, { value: "jev", label: "仅 JEV" }, { value: "openai", label: "仅对照" }]} />
               <Segmented legend="输入模态" name="modality" value={form.modality} onChange={modality => update({ modality })}
                 options={[{ value: "multimodal", label: "画面＋转写" }, { value: "visual", label: "仅画面" }, { value: "text", label: "仅转写" }]} />
-              {form.provider !== "openai" && <label className="field">JEV API Key<input type="password" autoComplete="off" value={form.key}
-                onChange={e => update({ key: e.target.value })} placeholder="或 TYPESAFE_API_KEY" /></label>}
             </div>
             <div className="group">
               <h3>抽样与窗口</h3>
@@ -106,8 +104,6 @@ export default function TaskPanel(props: Props) {
         {tab !== "task" && settings && <fieldset className="plain" disabled={locked}><ModelSettings section={tab} settings={settings} onChange={setSettings} /></fieldset>}
       </div>
       <div className="task-foot">
-        <label className="consent"><input type="checkbox" checked={form.consent} disabled={locked} onChange={e => update({ consent: e.target.checked })} />
-          <span>允许发送画面与转写至模型服务（云端 ASR 含音频）</span></label>
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className={`primary${queueActive ? " stop" : ""}`} type="submit" disabled={!settings || (!queueActive && queued === 0)}>
           {queueActive ? "暂停队列（当前视频完成后）" : `${preview ? "运行 DEMO" : "开始审核"} · ${queued} 个视频`}

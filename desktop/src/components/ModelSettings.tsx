@@ -10,7 +10,8 @@ export default function ModelSettings({ section, settings, onChange }: { section
       onChange={e => onChange({ ...settings, [key]: type === "number" ? Number(e.target.value) : e.target.value })} /></label>;
   }
   if (section === "models") return <>
-    <div className="group"><h3><span className="swatch jev" />JEV</h3>{field("jev_base_url", "服务地址")}{field("jev_model", "模型名称")}</div>
+    <div className="group"><h3><span className="swatch jev" />JEV</h3>{field("jev_base_url", "服务地址")}{field("jev_model", "模型名称")}
+      {field("jev_api_key", "API Key", "password", "或 TYPESAFE_API_KEY")}</div>
     <div className="group"><h3><span className="swatch openai" />多模态对照组</h3>{field("llm_base_url", "OpenAI 兼容服务地址")}{field("llm_model", "模型名称")}
       {field("llm_api_key", "API Key", "password", "或 LLM_API_KEY")}</div>
     <div className="group"><h3>请求并发</h3>{field("model_concurrency", "每组同时请求数（全局）", "number")}</div>

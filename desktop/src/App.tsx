@@ -13,7 +13,7 @@ import { freshStages, useModeration } from "./useModeration";
 export default function App() {
   const m = useModeration();
   const { preview, settings, setSettings, busy, videos, queueActive, stagesById } = m;
-  const [form, setForm] = useState<TaskForm>({ provider: "both", modality: "multimodal", key: "", interval: 0.5, seconds: 8, consent: false });
+  const [form, setForm] = useState<TaskForm>({ provider: "both", modality: "multimodal", interval: 0.5, seconds: 8 });
   const [error, setError] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const [bin, setBin] = useState<Verdict | null>(null);
@@ -56,10 +56,12 @@ export default function App() {
   }
   function start() {
     setError("");
-    if (!settings || !settings.output_root.trim() || !form.consent) { setError("请选择结果目录，并确认发送内容。"); return; }
+    if (!settings || !settings.output_root.trim()) { setError("请选择结果目录"); return; }
     if (!videos.some(v => v.status === "queued")) { setError("请先添加视频。"); return; }
-    m.startQueue({ output_root: settings.output_root, provider: form.provider, modality: form.modality, jev_key: form.key,
-                   interval: form.interval, segment_seconds: form.seconds, settings, upload_consent: form.consent });
+    // Keys are passed separately and never stored; uploading to the configured services is allowed by default.
+    const { jev_api_key, ...rest } = settings;
+    m.startQueue({ output_root: settings.output_root, provider: form.provider, modality: form.modality, jev_key: jev_api_key ?? "",
+                   interval: form.interval, segment_seconds: form.seconds, settings: rest, upload_consent: true });
   }
 
   const pending = videos.filter(v => v.status === "queued" || v.status === "running").length;
@@ -85,7 +87,7 @@ export default function App() {
         onStart={start} onStop={m.stopQueue} running={m.running} limit={m.limit} />
       <section className="panel flow-panel">
         <header className="panel-head">
-          <span><b>SIGNAL MAP</b> · 视频流向{preview && <span className="tag demo">DEMO 数据</span>}</span>
+          <span><b>SIGNAL MAP</b>{preview && <span className="tag demo">DEMO</span>}</span>
         </header>
         <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin}
           meta={{ interval: form.interval, segmentSeconds: form.seconds, cloud: cloudAsr,

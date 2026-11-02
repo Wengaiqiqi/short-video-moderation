@@ -63,4 +63,4 @@ tests/              核心、ASR 与 worker 回归测试
 
 事件包括 `moderation.progress`、`moderation.completed`（包含 `report`）、`moderation.failed`、`moderation.rejected`、`worker.error`、`worker.exited`。后台可同时运行多个审核任务。`completed` 表示批处理结束，单段仍可能失败，需检查各 provider 的 `complete` 和各段 `status`。
 
-当前版本没有任务取消、跨窗口恢复或持久任务队列。重设计页面时应继续保留失败段提示、上传确认、云端时间戳精度和未校准阈值说明。
+当前版本没有任务取消、跨窗口恢复或持久任务队列。界面不再单独询问上传确认：开始审核即视为允许把所选模态的画面、转写（云端 ASR 时含音频）发送至已配置的服务，请求中固定发送 `upload_consent: true`。重设计页面时应继续保留失败段提示、云端时间戳精度和未校准阈值说明。JEV 与对照组 API Key 都在「模型」页填写，只在内存中传递。

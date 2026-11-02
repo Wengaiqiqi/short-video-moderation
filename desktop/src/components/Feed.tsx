@@ -4,7 +4,7 @@ import type { LogEntry } from "../types";
 /** Event stream for this window, newest first. */
 export default function Feed({ log }: { log: LogEntry[] }) {
   return <section className="panel dock-panel">
-    <header className="panel-head"><span><b>FEED</b> · 事件流水</span><span className="meta">{log.length} 条</span></header>
+    <header className="panel-head"><span><b>FEED</b></span><span className="meta">{log.length}</span></header>
     <ol className="feed">
       {log.length === 0 && <li className="empty">等待引擎事件…</li>}
       {[...log].reverse().map(entry => <li key={entry.id} className={`l-${entry.level}`}>
