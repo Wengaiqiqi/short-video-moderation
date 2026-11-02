@@ -53,6 +53,21 @@ def default_settings():
                 policy=defaults['policy'], ffmpeg_path='', ffprobe_path='')
 
 
+OLD_DEFAULT_THRESHOLDS = (0.4, 0.8)
+
+
+def migrate_policy(policy):
+    """Policies saved with the old default 待定 threshold (0.4) move to the current default.
+
+    Only untouched policies are changed: not calibrated and still exactly 0.4 / 0.8 globally.
+    """
+    if not isinstance(policy, dict) or policy.get('calibrated_at'):
+        return policy
+    if (policy.get('review_threshold'), policy.get('block_threshold')) != OLD_DEFAULT_THRESHOLDS:
+        return policy
+    return dict(policy, review_threshold=load_defaults()['policy']['review_threshold'])
+
+
 RETIRED_SETTINGS = ('asr_concurrency', 'model_concurrency', 'jev_price_per_mtok', 'llm_price_per_mtok', 'asr_price_per_min')
 
 
@@ -64,6 +79,7 @@ def concurrency(settings):
 def initial_settings():
     """Defaults, overlaid with the settings saved last time (never keys), plus keychain status."""
     settings = {k: v for k, v in {**default_settings(), **load_saved_settings()}.items() if k not in RETIRED_SETTINGS}
+    settings['policy'] = migrate_policy(settings.get('policy'))
     try:
         validate_policy(settings['policy'])
     except (KeyError, TypeError, ValueError):

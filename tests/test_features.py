@@ -60,6 +60,18 @@ class RulesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_policy(bad)
 
+    def test_default_hold_band_is_065_to_08_and_old_saved_default_moves(self):
+        policy = desktop.load_defaults()['policy']
+        self.assertEqual((policy['review_threshold'], policy['block_threshold']), (0.65, 0.8))
+        self.assertEqual(decision({'violence': 0.6}, policy), 'allow')
+        self.assertEqual(decision({'violence': 0.7}, policy), 'review')
+        self.assertEqual(decision({'violence': 0.8}, policy), 'block')
+        old = dict(policy, review_threshold=0.4)
+        self.assertEqual(desktop.migrate_policy(old)['review_threshold'], 0.65)
+        # Hand-edited or calibrated thresholds are left alone.
+        self.assertEqual(desktop.migrate_policy(dict(old, block_threshold=0.9))['review_threshold'], 0.4)
+        self.assertEqual(desktop.migrate_policy(dict(old, calibrated_at='2026/11/1'))['review_threshold'], 0.4)
+
     def test_disabled_categories_are_left_out_and_presets_are_valid(self):
         policy = json.loads(json.dumps(POLICY))
         policy['categories']['hate']['enabled'] = False
@@ -212,10 +224,12 @@ class LibraryTests(unittest.TestCase):
 
     def test_settings_are_saved_without_keys_and_csv_opens_in_excel(self):
         with patch.dict(os.environ, {'SVM_RUNTIME_ROOT': str(self.root)}):
-            library.save_settings({'llm_api_key': 'secret', 'jev_api_key': 'secret', 'video_concurrency': 5})
+            old_policy = dict(desktop.load_defaults()['policy'], review_threshold=0.4)
+            library.save_settings({'llm_api_key': 'secret', 'jev_api_key': 'secret', 'video_concurrency': 5, 'policy': old_policy})
             saved = (self.root / 'settings.json').read_text(encoding='utf-8')
             self.assertNotIn('secret', saved)
             self.assertEqual(desktop.initial_settings()['video_concurrency'], 5)
+            self.assertEqual(desktop.initial_settings()['policy']['review_threshold'], 0.65)
             # One knob: the video concurrency also sets the shared ASR and model request limits.
             with patch.dict(os.environ, {'TYPESAFE_API_KEY': 'k', 'LLM_API_KEY': 'k'}):
                 desktop._context({'settings': {'video_concurrency': 5, 'asr_concurrency': 2}})

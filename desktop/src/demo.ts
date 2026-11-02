@@ -72,7 +72,7 @@ function windows(maxSeconds: number, total: number, seed: number) {
 const CATEGORIES = ["violence", "hate", "harassment"];
 const LABELS: Record<string, string> = { violence: "暴力", hate: "仇恨", harassment: "骚扰" };
 export const DEMO_POLICY = {
-  version: "short-video-research-v1", review_threshold: 0.4, block_threshold: 0.8,
+  version: "short-video-research-v1", review_threshold: 0.65, block_threshold: 0.8,
   categories: Object.fromEntries(CATEGORIES.map(c => [c, { label: LABELS[c], question: `Does this segment contain ${c}?`,
     positive: `Clear ${c}.`, negative: `No ${c}.` }])),
 };
@@ -113,7 +113,7 @@ export function demoReport(request: Pick<ModerationRequest, "provider" | "modali
         return [c, Math.round(Math.max(base, hot) * 1000) / 1000];
       }));
       const top = Math.max(...Object.values(probabilities));
-      return { ...row, probabilities, action: top >= 0.8 ? "block" : top >= 0.4 ? "review" : "allow" };
+      return { ...row, probabilities, action: top >= 0.8 ? "block" : top >= 0.65 ? "review" : "allow" };
     });
     const usage = segments.reduce((a, r) => ({ input_tokens: a.input_tokens + (r.usage?.input_tokens ?? 0),
       output_tokens: a.output_tokens + (r.usage?.output_tokens ?? 0) }), { input_tokens: 0, output_tokens: 0 });

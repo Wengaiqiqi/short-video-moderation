@@ -45,7 +45,7 @@ export function peakOf(row?: ModerationRow) {
 
 export function thresholds(report?: ModerationReport | null, category?: string) {
   const rule = category ? report?.policy?.categories?.[category] : undefined;
-  return { review: rule?.review_threshold ?? report?.policy?.review_threshold ?? 0.4,
+  return { review: rule?.review_threshold ?? report?.policy?.review_threshold ?? 0.65,
            block: rule?.block_threshold ?? report?.policy?.block_threshold ?? 0.8 };
 }
 export function categoriesOf(report?: ModerationReport | null) {
