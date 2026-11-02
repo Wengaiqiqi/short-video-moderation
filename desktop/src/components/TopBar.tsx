@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
-import { finalVerdict, fmtClock, fmtDuration } from "../lib/report";
-import type { BatchInfo, EngineState } from "../useModeration";
+import { finalVerdict, fmtDuration } from "../lib/report";
+import type { BatchInfo } from "../useModeration";
 import type { VideoItem } from "../types";
 
 interface Props {
-  preview: boolean; engine: EngineState; busy: boolean;
+  preview: boolean;
   videos: VideoItem[]; batch: BatchInfo | null; queueActive: boolean; limit: number;
   /** When the thresholds were last set from labelled data (None until then). */
   calibrated?: string;
   theme: "dark" | "light"; onTheme: (theme: "dark" | "light") => void;
 }
-
-const ENGINE_TEXT: Record<EngineState, string> = { connecting: "连接中", ready: "就绪", running: "审核中", error: "异常" };
 
 function useNow(active = true) {
   const [now, setNow] = useState(Date.now());
@@ -23,7 +21,7 @@ function useNow(active = true) {
   return now;
 }
 
-export default function TopBar({ preview, engine, busy, videos, batch, queueActive, limit, calibrated, theme, onTheme }: Props) {
+export default function TopBar({ preview, videos, batch, queueActive, limit, calibrated, theme, onTheme }: Props) {
   const now = useNow();
   // Counts cover this batch; a reviewer's final decision replaces the model verdict.
   const count = (test: (v: VideoItem) => boolean) => videos.filter(v => !v.history && test(v)).length;
@@ -57,9 +55,6 @@ export default function TopBar({ preview, engine, busy, videos, batch, queueActi
       <button type="button" className="theme-toggle" onClick={() => onTheme(theme === "dark" ? "light" : "dark")}
         aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "浅色主题" : "深色主题"}>
         {theme === "dark" ? "☀" : "☾"}</button>
-      <div className={`engine e-${engine}${busy ? " busy" : ""}`}>
-        <i />引擎 {ENGINE_TEXT[engine]} · {fmtClock(now)}
-      </div>
     </div>
   </header>;
 }

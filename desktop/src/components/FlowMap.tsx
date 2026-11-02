@@ -188,10 +188,10 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
       {VERDICTS.map(v => <path key={v.id} className={`rail out v-${v.id}`} d={geometry.paths.out[v.id]} markerEnd={`url(#arrow-${v.id})`} />)}
 
       <g>
-        {/* Ambient light while work is in a stage */}
-        {preparing > 0 && <Comet d={geometry.paths.inTop} tone="data" duration={1500} loop width={0.7} />}
-        {asrBusy > 0 && <Comet d={geometry.paths.inBot} tone="data" duration={1500} delay={500} loop width={0.7} />}
-        {classifying > 0 && <>
+        {/* Ambient light on every rail while any video is being reviewed */}
+        {runningVideos.length > 0 && <>
+          <Comet d={geometry.paths.inTop} tone="data" duration={1500} loop width={0.7} />
+          <Comet d={geometry.paths.inBot} tone="data" duration={1500} delay={500} loop width={0.7} />
           <Comet d={geometry.paths.mergeTop} tone="data" duration={1300} loop width={0.8} />
           <Comet d={geometry.paths.mergeBot} tone="data" duration={1300} delay={650} loop width={0.8} />
           {VERDICTS.map((v, i) => <Comet key={v.id} d={geometry.paths.out[v.id]} tone={v.id} duration={1600} delay={1300 + i * 400} loop width={0.8} />)}

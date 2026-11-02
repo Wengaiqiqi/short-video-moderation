@@ -183,7 +183,13 @@ function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, p
       </span>}
       {failures > 0 && !busy && <button type="button" className="tool" onClick={() => onRetryFailed(video.id)}
         title={failedText ? "重新发送失败的片段和全文判断" : undefined}>重试失败 {failures}</button>}
-      {report && !busy && <button type="button" className={`tool${rerun ? " on" : ""}`} onClick={() => setRerun(r => r ? null : { provider: "both", modality: report.modality ?? "multimodal" })}>重新审核</button>}
+      {report && !busy && <button type="button" className={`tool${rerun ? " on" : ""}`} onClick={() => setRerun(r => {
+        if (r) return null;
+        // Start from how this video was reviewed: the same model group and modality.
+        const used = providersOf(report);
+        const provider = used.length === 1 && (used[0] === "jev" || used[0] === "openai") ? used[0] : "both";
+        return { provider, modality: report.modality ?? "multimodal" };
+      })}>重新审核</button>}
       {busy && <button type="button" className="tool danger" onClick={() => onCancel(video.id)}>取消</button>}
       {semantic.size > 0 && <button type="button" className={`tool semantic-filter${only === "semantic" ? " on" : ""}`} aria-pressed={only === "semantic"}
         onClick={() => setOnly(x => x === "semantic" ? null : "semantic")} title="只看全文判断定位到的片段">全文定位 {semantic.size}</button>}

@@ -45,6 +45,21 @@ function initialTheme(): Theme {
   return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
+const DEFAULT_FORM: TaskForm = { provider: "both", modality: "multimodal", interval: 0.5, seconds: 8 };
+/** Last task choices (model group, modality, sampling), so a reload or restart keeps them. */
+function initialForm(): TaskForm {
+  try {
+    const saved = JSON.parse(localStorage.getItem("svm-task-form") ?? "null") as Partial<TaskForm> | null;
+    if (!saved || typeof saved !== "object") return DEFAULT_FORM;
+    return {
+      provider: saved.provider === "jev" || saved.provider === "openai" || saved.provider === "both" ? saved.provider : DEFAULT_FORM.provider,
+      modality: saved.modality === "visual" || saved.modality === "text" || saved.modality === "multimodal" ? saved.modality : DEFAULT_FORM.modality,
+      interval: typeof saved.interval === "number" && saved.interval >= 0.15 && saved.interval <= 4 ? saved.interval : DEFAULT_FORM.interval,
+      seconds: typeof saved.seconds === "number" && saved.seconds >= 1 && saved.seconds <= 30 ? saved.seconds : DEFAULT_FORM.seconds,
+    };
+  } catch { return DEFAULT_FORM; }
+}
+
 export default function App() {
   const m = useModeration();
   const [theme, setTheme] = useState<Theme>(initialTheme);
@@ -53,7 +68,10 @@ export default function App() {
     try { localStorage.setItem("svm-theme", theme); } catch { /* storage unavailable */ }
   }, [theme]);
   const { preview, settings, setSettings, busy, videos, queueActive, stagesById } = m;
-  const [form, setForm] = useState<TaskForm>({ provider: "both", modality: "multimodal", interval: 0.5, seconds: 8 });
+  const [form, setForm] = useState<TaskForm>(initialForm);
+  useEffect(() => {
+    try { localStorage.setItem("svm-task-form", JSON.stringify(form)); } catch { /* storage unavailable */ }
+  }, [form]);
   const [error, setError] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const [bin, setBin] = useState<Verdict | null>(null);
@@ -156,7 +174,7 @@ export default function App() {
     ?? [...videos].reverse().find(v => stagesById[v.id]) ?? null;
 
   return <div className={`app${collapsed ? " collapsed" : ""}`}>
-    <TopBar preview={preview} engine={m.engine} busy={busy} videos={videos} batch={m.batch} queueActive={queueActive} limit={m.limit}
+    <TopBar preview={preview} videos={videos} batch={m.batch} queueActive={queueActive} limit={m.limit}
       calibrated={settings?.policy?.calibrated_at} theme={theme} onTheme={setTheme} />
     <div className="progress-line" role="progressbar" aria-label="队列进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
       <i style={{ width: `${progress * 100}%` }} className={busy ? "busy" : undefined} />

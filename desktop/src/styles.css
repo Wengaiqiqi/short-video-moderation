@@ -115,13 +115,6 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .t-review { color: var(--review) !important; }
 .t-failed { color: var(--failed) !important; }
 .top-actions { flex: none; display: flex; align-items: center; }
-.engine { display: flex; align-items: center; gap: 8px; padding: 6px 13px; border-radius: 999px; font: 11.5px var(--mono); white-space: nowrap; }
-.engine i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.engine.e-ready { color: var(--allow); background: rgba(53, 200, 154, .1); }
-.engine.e-running { color: var(--accent); background: rgba(79, 182, 255, .1); }
-.engine.e-running i { animation: blink 1s steps(2) infinite; }
-.engine.e-connecting { color: var(--muted); background: var(--surface); }
-.engine.e-error { color: var(--block); background: rgba(255, 77, 94, .1); }
 
 .progress-line { position: relative; overflow: hidden; border-radius: 999px; background: var(--surface); }
 .progress-line i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--text); transition: width .4s ease; }
