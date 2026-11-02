@@ -9,6 +9,8 @@ short_video_moderation/
   cloud_asr.py      MiMo 云端转写、静音切分与并发控制
   limits.py         全部视频共享的请求上限
   errors.py         可直接显示给用户的错误
+  library.py        历史、人工终判、已审索引、设置与钥匙串、导出、标注读取
+  evidence.py       片段证据、片段视频、长视频切分
   providers.py      Jev、OpenAI 兼容多模态适配器
   desktop.py        桌面应用服务
   worker.py         JSON 行通信
@@ -57,10 +59,12 @@ tests/              核心、ASR 与 worker 回归测试
 
 界面还会发送 `{"action":"thumbnail","payload":{"id":"…","video_path":"…","ffmpeg_path":null}}` 获取封面（返回 `video.thumbnail`，含 `data_url` 或 `error`），以及 `{"action":"list_videos","payload":{"directory":"…"}}` 列出文件夹中的视频（返回 `videos.listed`，不递归）。批量审核由界面排队，界面按「同时处理视频数」（默认 11）并行发送 `moderation_start`，每个任务带 `job_id`，后台所有事件都回传 `job_id` 与 `video_path`；后台最多同时运行 32 个任务，超出返回 `moderation.rejected`。
 
+其他命令（均带 `request_id`，回复事件带同一 `request_id`）：`moderation_evaluate`（基于已有 `inputs.json` 重新审核；`retry_failed: true` 时只重发失败窗口并合并为新报告）、`moderation_cancel`（`job_id` 省略则取消全部，任务结束时发 `moderation.cancelled`）、`segment_evidence`、`segment_clip`、`save_review`、`list_history`、`save_settings`、`export_csv`、`read_labels`、`split_video`。`thumbnail` 的回复还带 `duration_sec`。结果目录下的 `index.json` 记录「文件指纹 + 配置签名 → 报告」，用于跳过已审过的视频；每个任务目录的 `review.json` 保存人工终判。策略类别可带 `label`（中文名）、`review_threshold`、`block_threshold`（覆盖全局阈值）；可选类别库在 `defaults/categories.json`。
+
 界面根据 `moderation.progress` 的文字推断阶段：`并行处理…` 为抽帧与转写，`按讲话时间…` 为窗口对齐，`语音识别 i/N` 为云端转写进度，`<provider>: 完成 i/N` 为逐段推理进度（两组模型同时推进）。修改这些文字时需同步 `desktop/src/useModeration.ts`。
 
 `moderation.failed` 的 `error`：参数错误、文件不存在和 `UserFacingError`（FFmpeg 解码、云端 ASR 的 HTTP 状态等，均不含服务端响应正文）直接显示原文；其他异常只显示类型名。
 
 事件包括 `moderation.progress`、`moderation.completed`（包含 `report`）、`moderation.failed`、`moderation.rejected`、`worker.error`、`worker.exited`。后台可同时运行多个审核任务。`completed` 表示批处理结束，单段仍可能失败，需检查各 provider 的 `complete` 和各段 `status`。
 
-当前版本没有任务取消、跨窗口恢复或持久任务队列。界面不再单独询问上传确认：开始审核即视为允许把所选模态的画面、转写（云端 ASR 时含音频）发送至已配置的服务，请求中固定发送 `upload_consent: true`。重设计页面时应继续保留失败段提示、云端时间戳精度和未校准阈值说明。JEV 与对照组 API Key 都在「模型」页填写，只在内存中传递。
+当前版本支持取消与历史结果读取，但没有持久任务队列：关闭应用后未完成的排队视频不会恢复。界面不再单独询问上传确认：开始审核即视为允许把所选模态的画面、转写（云端 ASR 时含音频）发送至已配置的服务，请求中固定发送 `upload_consent: true`。重设计页面时应继续保留失败段提示、云端时间戳精度和未校准阈值说明。JEV 与对照组 API Key 都在「模型」页填写，只在内存中传递。

@@ -14,6 +14,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 
 from .cloud_asr import WavSlicer, detect_silences, extract_full_audio, plan_speech_chunks
+from .errors import Cancelled
 from .providers import ProviderConfig, evaluate
 from .sampling import SamplingConfig, dedupe_frames, effective_min_segment, prepare_video
 from .alignment import align_evidence
@@ -38,7 +39,7 @@ SILENCE_LOOSE_DB, SILENCE_LOOSE_SEC = -25, 0.15
 
 
 def prepare(video, destination, sampling, transcription=None, *, asr_key=None, ffmpeg_path=None, ffprobe_path=None,
-            progress=lambda _: None, asr_limiter=None):
+            progress=lambda _: None, asr_limiter=None, should_stop=None):
     sampling.validate()
     tools = FFmpegTools(ffmpeg_path=ffmpeg_path, ffprobe_path=ffprobe_path)
     duration = tools.probe(Path(video)).duration_sec
@@ -85,7 +86,7 @@ def prepare(video, destination, sampling, transcription=None, *, asr_key=None, f
         # review window, upload only chunks with sound, and use each chunk's range as its timestamp.
         wav = audio_dir / 'audio.wav'
         try:
-            extract_full_audio(Path(video), wav, ffmpeg_path=transcription.ffmpeg_path)
+            extract_full_audio(Path(video), wav, ffmpeg_path=transcription.ffmpeg_path, should_stop=should_stop)
             silences = detect_silences(wav, noise_db=SILENCE_STRICT_DB, min_silence_sec=SILENCE_STRICT_SEC,
                                        ffmpeg_path=transcription.ffmpeg_path)
             dips = detect_silences(wav, noise_db=SILENCE_LOOSE_DB, min_silence_sec=SILENCE_LOOSE_SEC,
@@ -104,7 +105,8 @@ def prepare(video, destination, sampling, transcription=None, *, asr_key=None, f
                 progress(f'语音识别 0/{uploads}')
             transcript = transcribe_video_blocks(video, audio_manifest, config=transcription, output_dir=audio_dir,
                                                  api_key=asr_key, audio_extractor=WavSlicer(wav),
-                                                 cloud_limiter=asr_limiter, progress_callback=asr_progress)
+                                                 cloud_limiter=asr_limiter, progress_callback=asr_progress,
+                                                 should_stop=should_stop)
         finally:
             wav.unlink(missing_ok=True)
         stats = transcript['transcription'].get('cloud_statistics', {})
@@ -118,8 +120,10 @@ def prepare(video, destination, sampling, transcription=None, *, asr_key=None, f
     with ThreadPoolExecutor(max_workers=2, thread_name_prefix='moderation-prepare') as pool:
         audio_future = pool.submit(transcribe_audio)
         visual_future = pool.submit(prepare_video, video, destination, sampling,
-                                    ffmpeg_path=ffmpeg_path, ffprobe_path=ffprobe_path)
+                                    ffmpeg_path=ffmpeg_path, ffprobe_path=ffprobe_path, should_stop=should_stop)
         manifest, (utterances, failed_audio) = visual_future.result(), audio_future.result()
+    if should_stop and should_stop():
+        raise Cancelled()
     progress('按讲话时间组合画面；补齐静音区间')
     frames = [frame for segment in manifest['segments'] for frame in segment['frames']]
     precision = 'absent' if not has_audio else 'speech_chunk' if transcription.engine == 'mimo-cloud' else 'asr_segment'
@@ -153,20 +157,48 @@ def prepare(video, destination, sampling, transcription=None, *, asr_key=None, f
     return manifest
 
 
+def _check_thresholds(low, high, where):
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (low, high)) or not 0 <= low < high <= 1:
+        raise ValueError(f'{where}: require 0 <= review_threshold < block_threshold <= 1')
+
+
 def validate_policy(policy):
     if not policy.get('version') or not policy.get('categories'):
         raise ValueError('Policy requires version and categories')
-    low, high = policy['review_threshold'], policy['block_threshold']
-    if not 0 <= low < high <= 1:
-        raise ValueError('Require 0 <= review_threshold < block_threshold <= 1')
-    for rule in policy['categories'].values():
+    _check_thresholds(policy['review_threshold'], policy['block_threshold'], 'policy')
+    for key, rule in policy['categories'].items():
         if not all(isinstance(rule.get(k), str) and rule[k].strip() for k in ('question', 'positive', 'negative')):
             raise ValueError('Each category requires a question and positive/negative criteria')
+        if 'review_threshold' in rule or 'block_threshold' in rule:
+            _check_thresholds(rule.get('review_threshold', policy['review_threshold']),
+                              rule.get('block_threshold', policy['block_threshold']), key)
+
+
+def category_thresholds(policy, category):
+    """(review, block) for one category; a category may override the policy-wide thresholds."""
+    rule = policy['categories'].get(category, {})
+    return rule.get('review_threshold', policy['review_threshold']), rule.get('block_threshold', policy['block_threshold'])
 
 
 def decision(probabilities, policy):
-    peak = max(probabilities.values())
-    return 'block' if peak >= policy['block_threshold'] else 'review' if peak >= policy['review_threshold'] else 'allow'
+    action = 'allow'
+    for category, value in probabilities.items():
+        review, block = category_thresholds(policy, category)
+        if value >= block:
+            return 'block'
+        if value >= review:
+            action = 'review'
+    return action
+
+
+def usage_totals(rows):
+    """Sum every numeric usage counter (input/output/total tokens…) over completed rows."""
+    totals = {}
+    for row in rows:
+        for key, value in (row.get('usage') or {}).items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                totals[key] = totals.get(key, 0) + value
+    return totals
 
 
 def missing_evidence(segment, modality):
@@ -182,13 +214,18 @@ def missing_evidence(segment, modality):
 
 
 async def run_models(manifest, policy, configs, destination, *, keys=None, modality='multimodal', progress=lambda _: None,
-                     evaluator=evaluate, limiters=None):
+                     evaluator=evaluate, limiters=None, should_stop=None, stop_on_block=False, only_segments=None, previous=None):
     """Judge every window with every provider, concurrently.
 
     Requests per provider are capped by ``limiters[provider]`` (shared across videos) when given,
     otherwise by ``config.max_concurrency``. Windows without evidence for the modality are recorded
     as ``skipped``; windows whose speech could not be transcribed are judged on frames and held for
     review (``evidence: asr_failed``).
+
+    ``only_segments`` ({provider: {segment_id}}) re-judges just those windows; the other rows are copied
+    from ``previous`` (an earlier report on the same inputs), e.g. to retry failed windows.
+    ``stop_on_block`` skips windows not yet sent once any window is blocked (the verdict cannot change).
+    ``should_stop`` is polled before each request; returning True raises ``Cancelled``.
     """
     validate_policy(policy)
     if not configs or modality not in {'multimodal', 'visual', 'text'}:
@@ -212,11 +249,27 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
             raise ValueError(f'Missing {config.api_key_env}')
     run_dir = Path(destination) / ('evaluation-' + time.strftime('%Y%m%d-%H%M%S') + '-' + os.urandom(3).hex())
     run_dir.mkdir(parents=True, exist_ok=False)
+    if previous is not None and previous.get('input_hash') != claimed:
+        raise ValueError('Previous report belongs to different inputs')
     report = {'input_hash': claimed, 'policy': policy, 'policy_hash': fingerprint(policy), 'modality': modality,
-              'providers': {}, 'sampling': manifest['sampling'], 'localization': 'segment_interval_not_exact_event_boundary'}
+              'providers': {}, 'sampling': manifest['sampling'], 'localization': 'segment_interval_not_exact_event_boundary',
+              'video_path': manifest.get('video_path'), 'video_id': manifest.get('video_id'),
+              'duration_sec': manifest.get('duration_sec'), 'asr_statistics': manifest.get('asr_statistics'),
+              'frame_statistics': manifest.get('frame_statistics'), 'created_at': time.strftime('%Y-%m-%dT%H:%M:%S')}
+    if previous is not None:
+        report['retry_of'] = previous.get('report_path')
     segments = manifest['segments']
     total = len(segments)
     rows = {config.provider: {} for config in configs}
+    todo = {config.provider: [s for s in segments if only_segments is None
+                              or s['segment_id'] in only_segments.get(config.provider, ())] for config in configs}
+    for config in configs:
+        # Rows that are not re-judged come from the earlier report unchanged.
+        if only_segments is not None:
+            kept = {r['segment_id']: r for r in (previous or {}).get('providers', {}).get(config.provider, {}).get('segments', [])}
+            redo = {s['segment_id'] for s in todo[config.provider]}
+            rows[config.provider].update({sid: row for sid, row in kept.items() if sid not in redo})
+    blocked = [False]
     done = {config.provider: 0 for config in configs}
     local = {config.provider: asyncio.Semaphore(config.max_concurrency) for config in configs}
 
@@ -229,7 +282,7 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
         for config in configs:
             ordered = [rows[config.provider][s['segment_id']] for s in segments if s['segment_id'] in rows[config.provider]]
             report['providers'][config.provider] = {
-                'config': asdict(config), 'segments': ordered,
+                'config': asdict(config), 'segments': ordered, 'usage': usage_totals(ordered),
                 'complete': len(ordered) == total and all(r['status'] in ('completed', 'skipped') for r in ordered)}
         write_json(run_dir / 'report.json', report)
 
@@ -244,12 +297,25 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
             row.update(status='skipped', action='allow', skip_reason=reason)
         else:
             extra = {'client': client} if client is not None else {}
+            if should_stop and should_stop():
+                raise Cancelled()
             async with slot(config.provider):
                 started = time.perf_counter()
+                if should_stop and should_stop():
+                    raise Cancelled()
+                if stop_on_block and blocked[0]:
+                    row.update(status='skipped', action='allow', skip_reason='stopped_after_block')
+                    rows[config.provider][segment['segment_id']] = row
+                    done[config.provider] += 1
+                    progress(f"{config.provider}: 完成 {done[config.provider]}/{len(todo[config.provider])}")
+                    write_report()
+                    return
                 try:
                     result = await evaluator(segment, policy, config, keys.get(config.provider) or os.environ[config.api_key_env],
                                              modality=modality, **extra)
                     row.update(result, status='completed', action=decision(result['probabilities'], policy))
+                    if row['action'] == 'block':
+                        blocked[0] = True
                     if segment.get('audio_status') == 'asr_failed' and modality != 'visual':
                         # Speech was not available: never let this window pass unseen.
                         row['evidence'] = 'asr_failed'
@@ -260,7 +326,7 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
         row['elapsed_sec'] = round(time.perf_counter() - started, 3)
         rows[config.provider][segment['segment_id']] = row
         done[config.provider] += 1
-        progress(f"{config.provider}: 完成 {done[config.provider]}/{total}")
+        progress(f"{config.provider}: 完成 {done[config.provider]}/{len(todo[config.provider])}")
         write_report()
 
     async with AsyncExitStack() as stack:
@@ -271,9 +337,9 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
                 clients[config.provider] = await stack.enter_async_context(httpx.AsyncClient(
                     timeout=config.timeout_sec, limits=httpx.Limits(max_connections=limit, max_keepalive_connections=limit)))
         for config in configs:
-            progress(f"{config.provider}: 完成 0/{total}")
+            progress(f"{config.provider}: 完成 0/{len(todo[config.provider])}")
         await asyncio.gather(*(judge(config, segment, clients.get(config.provider))
-                               for config in configs for segment in segments))
+                               for config in configs for segment in todo[config.provider]))
     write_report()
     lines = ['# 短视频审核对照报告', '', f"输入指纹：`{claimed}`", '',
              '概率阈值为实验配置，需用验证集校准。片段时间范围不等于精确违规发生时间。', '',

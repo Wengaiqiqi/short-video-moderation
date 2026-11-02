@@ -16,7 +16,10 @@ export const CATEGORY_LABEL: Record<string, string> = { violence: "暴力", hate
 export const DEFAULT_CATEGORIES = ["violence", "hate", "harassment"];
 
 export function providerLabel(id: string) { return PROVIDER_LABEL[id] ?? id.toUpperCase(); }
-export function categoryLabel(id: string) { return CATEGORY_LABEL[id] ?? id; }
+/** Chinese name from the report's policy when present, else the built-in names. */
+export function categoryLabel(id: string, report?: ModerationReport | null) {
+  return report?.policy?.categories?.[id]?.label ?? CATEGORY_LABEL[id] ?? id;
+}
 
 export function verdictOf(row: ModerationRow): Verdict {
   if (row.status === "skipped") return "allow";
@@ -40,8 +43,10 @@ export function peakOf(row?: ModerationRow) {
   return values.length ? Math.max(...values) : 0;
 }
 
-export function thresholds(report?: ModerationReport | null) {
-  return { review: report?.policy?.review_threshold ?? 0.4, block: report?.policy?.block_threshold ?? 0.8 };
+export function thresholds(report?: ModerationReport | null, category?: string) {
+  const rule = category ? report?.policy?.categories?.[category] : undefined;
+  return { review: rule?.review_threshold ?? report?.policy?.review_threshold ?? 0.4,
+           block: rule?.block_threshold ?? report?.policy?.block_threshold ?? 0.8 };
 }
 export function categoriesOf(report?: ModerationReport | null) {
   const fromPolicy = Object.keys(report?.policy?.categories ?? {});
@@ -177,4 +182,87 @@ export function phaseOf(stages?: Record<string, { state: string }>): Phase {
   if (stages.align?.state === "pass") return "classify";
   if (stages.prepare?.state === "run") return "prepare";
   return "queued";
+}
+
+/** The verdict that counts: the reviewer's final decision when there is one, else the model verdict. */
+export function finalVerdict(video: { verdict?: Verdict; review?: { decision: Verdict } | null }): Verdict | undefined {
+  return video.review?.decision ?? video.verdict;
+}
+
+/** Windows where both provider groups reached a (completed) verdict and the verdicts differ. */
+export function disagreements(report: ModerationReport | null | undefined): Set<number> {
+  const out = new Set<number>();
+  const [a, b] = providersOf(report);
+  if (!a || !b || !report) return out;
+  const other = new Map(report.providers[b].segments.map(r => [r.segment_id, r]));
+  for (const row of report.providers[a].segments) {
+    const peer = other.get(row.segment_id);
+    if (peer && row.status === "completed" && peer.status === "completed" && verdictOf(row) !== verdictOf(peer)) out.add(row.segment_id);
+  }
+  return out;
+}
+
+/** Total tokens of one provider's usage counters, whatever the field names. */
+export function tokensOf(usage?: Record<string, number>) {
+  if (!usage) return 0;
+  if (usage.total_tokens) return usage.total_tokens;
+  return (usage.input_tokens ?? usage.prompt_tokens ?? 0) + (usage.output_tokens ?? usage.completion_tokens ?? 0);
+}
+
+export interface Cost { tokens: Record<string, number>; asrSeconds: number; amount: number | null }
+/** Tokens per provider, uploaded ASR seconds and (when prices are set) an estimated amount. */
+export function costOf(report: ModerationReport | null | undefined,
+                       prices: { jev?: number; openai?: number; asrPerMin?: number }): Cost {
+  const tokens: Record<string, number> = {};
+  for (const [provider, data] of Object.entries(report?.providers ?? {})) {
+    tokens[provider] = tokensOf(data.usage) || data.segments.reduce((a, r) => a + tokensOf(r.usage), 0);
+  }
+  const asrSeconds = report?.asr_statistics?.uploaded_seconds ?? 0;
+  const priced = (prices.jev ?? 0) > 0 || (prices.openai ?? 0) > 0 || (prices.asrPerMin ?? 0) > 0;
+  const amount = priced ? (tokens.jev ?? 0) / 1e6 * (prices.jev ?? 0) + (tokens.openai ?? 0) / 1e6 * (prices.openai ?? 0)
+    + asrSeconds / 60 * (prices.asrPerMin ?? 0) : null;
+  return { tokens, asrSeconds, amount };
+}
+export function addCosts(costs: Cost[]): Cost {
+  const tokens: Record<string, number> = {};
+  let asrSeconds = 0, amount: number | null = null;
+  for (const c of costs) {
+    for (const [k, v] of Object.entries(c.tokens)) tokens[k] = (tokens[k] ?? 0) + v;
+    asrSeconds += c.asrSeconds;
+    if (c.amount != null) amount = (amount ?? 0) + c.amount;
+  }
+  return { tokens, asrSeconds, amount };
+}
+export function fmtTokens(n: number) {
+  return n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n));
+}
+
+/** Highest category score of a video (across windows and the given providers). */
+export function videoScore(report: ModerationReport | null | undefined, providers?: string[]) {
+  let peak = 0;
+  for (const [provider, data] of Object.entries(report?.providers ?? {})) {
+    if (providers && !providers.includes(provider)) continue;
+    for (const row of data.segments) peak = Math.max(peak, peakOf(row));
+  }
+  return peak;
+}
+
+export interface CalibrationRow { threshold: number; tp: number; fp: number; fn: number; tn: number;
+  precision: number; recall: number; f1: number; accuracy: number }
+/** Sweep a block threshold over labelled videos: score ≥ threshold → blocked. */
+export function calibrate(samples: { score: number; blocked: boolean }[], step = 0.05): CalibrationRow[] {
+  const rows: CalibrationRow[] = [];
+  for (let t = step; t < 1 - 1e-9; t += step) {
+    const threshold = Math.round(t * 100) / 100;
+    let tp = 0, fp = 0, fn = 0, tn = 0;
+    for (const s of samples) {
+      const predicted = s.score >= threshold;
+      if (predicted && s.blocked) tp++; else if (predicted) fp++; else if (s.blocked) fn++; else tn++;
+    }
+    const precision = tp + fp ? tp / (tp + fp) : 0;
+    const recall = tp + fn ? tp / (tp + fn) : 0;
+    rows.push({ threshold, tp, fp, fn, tn, precision, recall, f1: precision + recall ? 2 * precision * recall / (precision + recall) : 0,
+                accuracy: samples.length ? (tp + tn) / samples.length : 0 });
+  }
+  return rows;
 }

@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from .errors import UserFacingError
+from .errors import Cancelled, UserFacingError
 from .paths import temp_root as audio_temp_root
 import threading
 import time
@@ -266,12 +266,13 @@ def clean_asr_text(text: str) -> str:
     return text if _WORD.search(text) else ""
 
 
-def extract_full_audio(video_path: Path, output_path: Path, *, ffmpeg_path: str | None = None) -> None:
+def extract_full_audio(video_path: Path, output_path: Path, *, ffmpeg_path: str | None = None, should_stop=None) -> None:
     """Decode the whole audio track once (16 kHz mono PCM); chunks are then sliced in memory."""
     command = [resolve_ffmpeg(ffmpeg_path), "-hide_banner", "-loglevel", "error", "-i", str(video_path),
                "-vn", "-sn", "-dn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-y", str(output_path)]
+    from .media import run_cancellable
     try:
-        completed = subprocess.run(command, capture_output=True, check=False, timeout=300, **_SUBPROCESS_KWARGS)
+        completed = run_cancellable(command, should_stop=should_stop, timeout=300)
     except subprocess.TimeoutExpired:
         raise UserFacingError("FFmpeg提取音频超时(300秒)")
     if completed.returncode != 0 or not output_path.is_file() or output_path.stat().st_size <= 44:
@@ -391,6 +392,7 @@ def transcribe_blocks_with_mimo(
     requester: MimoRequester | None = None,
     audio_extractor: AudioExtractor | None = None,
     limiter: Any = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Transcribe each block with the cloud ASR.
 
@@ -429,6 +431,8 @@ def transcribe_blocks_with_mimo(
             progress_callback(message, completed_count, total)
 
     def request(audio_path: Path) -> str:
+        if should_stop and should_stop():
+            raise Cancelled()
         if limiter is None:
             return _request_with_retries(audio_path, settings=settings, requester=actual_requester)
         with limiter.slot():
@@ -487,6 +491,8 @@ def transcribe_blocks_with_mimo(
                     except Exception as exc:
                         errors[segment_id] = exc
                     report(f"第{segment_id}段云端语音识别完成")
+    if should_stop and should_stop():
+        raise Cancelled()
     if active and not results:
         raise next(iter(errors.values()))
 

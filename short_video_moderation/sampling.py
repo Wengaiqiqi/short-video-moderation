@@ -12,7 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from .errors import UserFacingError
-from .media import FFmpegTools, _SUBPROCESS_KWARGS
+from .media import FFmpegTools, _SUBPROCESS_KWARGS, run_cancellable
 
 
 @dataclass(frozen=True)
@@ -102,7 +102,7 @@ def group_frames(frames: list[dict], duration: float, config: SamplingConfig) ->
             for i, group in enumerate(groups)]
 
 
-def prepare_video(video_path, output_dir, config=SamplingConfig(), *, ffmpeg_path=None, ffprobe_path=None):
+def prepare_video(video_path, output_dir, config=SamplingConfig(), *, ffmpeg_path=None, ffprobe_path=None, should_stop=None):
     config.validate()
     video, destination = Path(video_path).resolve(), Path(output_dir).resolve()
     if not video.is_file():
@@ -119,7 +119,7 @@ def prepare_video(video_path, output_dir, config=SamplingConfig(), *, ffmpeg_pat
                '-map', '0:v:0', '-an', '-sn', '-vf',
                f"setpts=PTS-STARTPTS,select='{selection}',showinfo,scale=960:960:force_original_aspect_ratio=decrease",
                '-fps_mode', 'vfr', '-q:v', '3', str(frame_dir / 'frame_%06d.jpg')]
-    result = subprocess.run(command, capture_output=True, timeout=600, **_SUBPROCESS_KWARGS)
+    result = run_cancellable(command, should_stop=should_stop, timeout=600)
     if result.returncode:
         details = result.stderr.decode(errors='replace').strip().splitlines()[-1:] or ['']
         raise UserFacingError(f'视频解码失败，请确认文件完整且为 FFmpeg 支持的格式。{details[0][-200:]}')

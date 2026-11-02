@@ -1,0 +1,44 @@
+{
+  "sexual": {
+    "label": "色情",
+    "question": "Does this segment show sexual activity, sexualized nudity or sexually explicit speech?",
+    "positive": "Explicit sexual acts, exposed genitals or sexualized nudity, or explicit sexual descriptions.",
+    "negative": "Non-sexual nudity in medical, educational or artistic context, swimwear, or romance without explicit content."
+  },
+  "minors": {
+    "label": "未成年人",
+    "question": "Does this segment sexualize, endanger or exploit a minor?",
+    "positive": "A child or teenager is sexualized, put in serious danger, abused, or exploited for profit.",
+    "negative": "Minors in ordinary, safe activities without sexualization or exploitation."
+  },
+  "self_harm": {
+    "label": "自残自杀",
+    "question": "Does this segment depict, encourage or give instructions for self-harm or suicide?",
+    "positive": "Self-injury or suicide attempts, or content encouraging them or describing methods.",
+    "negative": "Supportive discussion, prevention resources or news reporting without graphic detail or encouragement."
+  },
+  "drugs": {
+    "label": "毒品",
+    "question": "Does this segment promote, sell or show the use of illegal drugs?",
+    "positive": "Use, sale, purchase or glorification of illegal drugs, or instructions to obtain or make them.",
+    "negative": "Anti-drug education, medical use of prescribed medicine, or neutral news reporting."
+  },
+  "gambling": {
+    "label": "赌博",
+    "question": "Does this segment promote gambling or illegal betting services?",
+    "positive": "Advertising, inviting viewers to, or showing access details for gambling or betting platforms.",
+    "negative": "Board or card games without stakes, lottery news, or discussion warning against gambling."
+  },
+  "fraud_ads": {
+    "label": "诈骗引流",
+    "question": "Does this segment try to divert viewers off-platform or lure them into scams or illegitimate money-making?",
+    "positive": "Contact details or QR codes for private deals, get-rich-quick or investment scams, fake giveaways or phishing.",
+    "negative": "Ordinary product reviews or clearly labelled legitimate advertising without diversion or deception."
+  },
+  "dangerous_acts": {
+    "label": "危险行为",
+    "question": "Does this segment show or encourage dangerous stunts or challenges likely to cause serious injury?",
+    "positive": "Risky stunts, challenges or pranks likely to cause serious injury, especially when presented for imitation.",
+    "negative": "Professional sports with safety measures, or safety demonstrations that discourage imitation."
+  }
+}

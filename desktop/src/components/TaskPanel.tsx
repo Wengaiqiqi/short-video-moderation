@@ -1,5 +1,6 @@
 import { useState } from "react";
 import ModelSettings from "./ModelSettings";
+import RulesEditor from "./RulesEditor";
 import Segmented from "./Segmented";
 import type { ModerationRequest, Settings, VideoItem } from "../types";
 
@@ -7,12 +8,12 @@ export interface TaskForm {
   provider: ModerationRequest["provider"]; modality: ModerationRequest["modality"];
   interval: number; seconds: number;
 }
-type Tab = "task" | "models" | "asr" | "system";
+type Tab = "task" | "rules" | "models" | "asr" | "system";
 const TABS: { id: Tab; en: string; zh: string }[] = [
-  { id: "task", en: "TASK", zh: "任务" }, { id: "models", en: "MODELS", zh: "模型" },
+  { id: "task", en: "TASK", zh: "任务" }, { id: "rules", en: "RULES", zh: "规则" }, { id: "models", en: "MODELS", zh: "模型" },
   { id: "asr", en: "ASR", zh: "语音" }, { id: "system", en: "SYS", zh: "系统" },
 ];
-const STATUS: Record<VideoItem["status"], string> = { queued: "排队", running: "审核中", done: "完成", failed: "失败" };
+const STATUS: Record<VideoItem["status"], string> = { queued: "排队", running: "审核中", done: "完成", failed: "失败", cancelled: "已取消" };
 
 interface Props {
   form: TaskForm; update: (patch: Partial<TaskForm>) => void;
@@ -22,13 +23,19 @@ interface Props {
   onAddFiles: () => void; onAddFolder: () => void; onAddPath: (path: string) => void; onBrowseOutput: () => void;
   onRemove: (id: string) => void; onClearQueued: () => void;
   onStart: () => void; onStop: () => void; running: number; limit: number;
+  onCancel: (id: string) => void; onCancelAll: () => void; onRequeue: (id: string) => void;
+}
+
+function Toggle({ label, checked, onChange, title }: { label: string; checked: boolean; onChange: (v: boolean) => void; title?: string }) {
+  return <label className="switch-field" title={title}><input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
+    <span className="toggle" aria-hidden="true" />{label}</label>;
 }
 
 export default function TaskPanel(props: Props) {
   const { form, update, settings, setSettings, videos, queueActive, busy, error, preview, collapsed, onCollapse } = props;
   const [tab, setTab] = useState<Tab>("task");
   const [path, setPath] = useState("");
-  const pending = videos.filter(v => v.status === "queued" || v.status === "running");
+  const pending = videos.filter(v => v.status === "queued" || v.status === "running" || v.status === "cancelled");
   const queued = pending.filter(v => v.status === "queued").length;
   const finished = videos.length - pending.length;
   const locked = queueActive || busy || !settings;
@@ -69,7 +76,9 @@ export default function TaskPanel(props: Props) {
                 <span className="q-thumb">{v.thumb ? <img src={v.thumb} alt="" /> : null}</span>
                 <span className="q-name" title={v.path}>{v.name}</span>
                 <span className="q-state">{STATUS[v.status]}</span>
-                {v.status === "queued" && <button type="button" className="q-remove" aria-label={`移出队列：${v.name}`} onClick={() => props.onRemove(v.id)}>×</button>}
+                {v.status === "queued" && <button type="button" className="q-remove" aria-label={`移出队列：${v.name}`} title="移出队列" onClick={() => props.onRemove(v.id)}>×</button>}
+                {v.status === "running" && <button type="button" className="q-remove" aria-label={`取消：${v.name}`} title="立即取消" onClick={() => props.onCancel(v.id)}>■</button>}
+                {v.status === "cancelled" && <button type="button" className="q-remove" aria-label={`重新排队：${v.name}`} title="重新排队" onClick={() => props.onRequeue(v.id)}>↻</button>}
               </li>)}
             </ol>}
             {queued > 1 && <button type="button" className="link-button" onClick={props.onClearQueued}>清空排队</button>}
@@ -82,6 +91,14 @@ export default function TaskPanel(props: Props) {
                 <button type="button" aria-label="增加并发" onClick={() => setSettings({ ...settings, video_concurrency: Math.min(32, (settings.video_concurrency ?? 11) + 1) })}>＋</button>
               </span>
               <span className="h-meta">进行中 {props.running}/{props.limit}</span></label>}
+            {settings && <div className="toggles">
+              <Toggle label="跳过已审过的视频" checked={settings.skip_reviewed !== false} title="同一文件、同样配置已有完整结果时直接复用"
+                onChange={v => setSettings({ ...settings, skip_reviewed: v })} />
+              <Toggle label="命中拦截即停止送审" checked={!!settings.stop_on_block} title="一段被拦截后，剩余片段不再送审（报告会不完整）"
+                onChange={v => setSettings({ ...settings, stop_on_block: v })} />
+              <Toggle label="自动切分超过 10 分钟的视频" checked={settings.split_long_videos !== false}
+                onChange={v => setSettings({ ...settings, split_long_videos: v })} />
+            </div>}
           </div>
           <fieldset className="plain" disabled={locked}>
             <div className="group">
@@ -101,13 +118,18 @@ export default function TaskPanel(props: Props) {
             </div>
           </fieldset>
         </>}
-        {tab !== "task" && settings && <fieldset className="plain" disabled={locked}><ModelSettings section={tab} settings={settings} onChange={setSettings} /></fieldset>}
+        {tab === "rules" && settings && <fieldset className="plain" disabled={locked}><RulesEditor settings={settings} onChange={setSettings} /></fieldset>}
+        {(tab === "models" || tab === "asr" || tab === "system") && settings &&
+          <fieldset className="plain" disabled={locked}><ModelSettings section={tab} settings={settings} onChange={setSettings} /></fieldset>}
       </div>
       <div className="task-foot">
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className={`primary${queueActive ? " stop" : ""}`} type="submit" disabled={!settings || (!queueActive && queued === 0)}>
-          {queueActive ? "暂停队列（当前视频完成后）" : `${preview ? "运行 DEMO" : "开始审核"} · ${queued} 个视频`}
-        </button>
+        <div className="foot-row">
+          <button className={`primary${queueActive ? " stop" : ""}`} type="submit" disabled={!settings || (!queueActive && queued === 0)}>
+            {queueActive ? "暂停队列" : `${preview ? "运行 DEMO" : "开始审核"} · ${queued} 个视频`}
+          </button>
+          {props.running > 0 && <button type="button" className="primary danger" onClick={props.onCancelAll} title="暂停队列并立即取消所有进行中的视频">全部停止</button>}
+        </div>
       </div>
     </form>
   </aside>;

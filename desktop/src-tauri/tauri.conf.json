@@ -10,10 +10,23 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "title": "短视频审核", "width": 1280, "height": 900, "minWidth": 820, "minHeight": 600 }],
+    "windows": [
+      {
+        "title": "短视频审核",
+        "width": 1280,
+        "height": 900,
+        "minWidth": 820,
+        "minHeight": 600
+      }
+    ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
     }
   },
-  "bundle": { "active": true, "targets": ["nsis"] }
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ]
+  }
 }

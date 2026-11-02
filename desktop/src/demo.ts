@@ -12,6 +12,8 @@ export const DEMO_SETTINGS: Settings = {
   asr_engine: "mimo-cloud", asr_model: "small", asr_language: "zh", asr_device: "cpu", asr_compute_type: "int8",
   mimo_base_url: "https://api.xiaomimimo.com/v1", mimo_model: "mimo-v2.5-asr",
   asr_concurrency: 8, model_concurrency: 8, video_concurrency: 11,
+  skip_reviewed: true, stop_on_block: false, split_long_videos: true, remember_keys: false, keychain_available: false,
+  jev_price_per_mtok: 0, llm_price_per_mtok: 0, asr_price_per_min: 0,
   ffmpeg_path: "", ffprobe_path: "",
 };
 
@@ -69,9 +71,16 @@ function windows(maxSeconds: number, total: number, seed: number) {
 }
 
 const CATEGORIES = ["violence", "hate", "harassment"];
+const LABELS: Record<string, string> = { violence: "暴力", hate: "仇恨", harassment: "骚扰" };
+export const DEMO_POLICY = {
+  version: "short-video-research-v1", review_threshold: 0.4, block_threshold: 0.8,
+  categories: Object.fromEntries(CATEGORIES.map(c => [c, { label: LABELS[c], question: `Does this segment contain ${c}?`,
+    positive: `Clear ${c}.`, negative: `No ${c}.` }])),
+};
 
 /** Each demo video gets a profile from its path: clean, borderline or clearly violating. */
-export function demoReport(request: Pick<ModerationRequest, "provider" | "modality" | "segment_seconds" | "video_path">): ModerationReport {
+export function demoReport(request: Pick<ModerationRequest, "provider" | "modality" | "segment_seconds" | "video_path">,
+                           options: { fixFailures?: boolean } = {}): ModerationReport {
   const seed = hash(request.video_path);
   // 0,1 clean · 2,3 borderline · 4 violating; demo files cycle through a fixed mix.
   const index = Number(/\/(\d+)-/.exec(request.video_path)?.[1] ?? NaN);
@@ -82,8 +91,8 @@ export function demoReport(request: Pick<ModerationRequest, "provider" | "modali
   const hotCategory = CATEGORIES[seed % 3];
   const providers = request.provider === "both" ? ["jev", "openai"] : [request.provider];
   const report: ModerationReport = {
-    report_path: "DEMO/report.json", modality: request.modality, input_hash: `demo${seed.toString(16)}`,
-    policy: { version: "short-video-research-v1", review_threshold: 0.4, block_threshold: 0.8, categories: Object.fromEntries(CATEGORIES.map(c => [c, {}])) },
+    report_path: `DEMO/${seed.toString(16)}/${Date.now()}/report.json`, modality: request.modality, input_hash: `demo${seed.toString(16)}`,
+    policy: DEMO_POLICY, video_path: request.video_path, created_at: new Date().toISOString(),
     sampling: { interval_sec: 0.5, segment_sec: request.segment_seconds }, providers: {},
   };
   const duration = spans[spans.length - 1][1];
@@ -96,7 +105,8 @@ export function demoReport(request: Pick<ModerationRequest, "provider" | "modali
         elapsed_sec: Math.round((0.6 + next() * 1.8) * 1000) / 1000, visual_evidence: "sampled",
         model: provider === "jev" ? DEMO_SETTINGS.jev_model : DEMO_SETTINGS.llm_model,
       };
-      if (provider === "openai" && seed % 7 === 3 && index === 2) return { ...row, status: "failed", action: "review", error_type: "RuntimeError" };
+      if (provider === "openai" && seed % 7 === 3 && index === 2 && !options.fixFailures) return { ...row, status: "failed", action: "review", error_type: "http_429" };
+      row.usage = { input_tokens: Math.round(1100 + next() * 1600), output_tokens: Math.round(20 + next() * 30) };
       const d = ((start + end) / 2 / duration - hotCenter) / 0.12;
       const probabilities = Object.fromEntries(CATEGORIES.map(c => {
         const base = 0.02 + next() * 0.1;
@@ -106,8 +116,12 @@ export function demoReport(request: Pick<ModerationRequest, "provider" | "modali
       const top = Math.max(...Object.values(probabilities));
       return { ...row, probabilities, action: top >= 0.8 ? "block" : top >= 0.4 ? "review" : "allow" };
     });
-    report.providers[provider] = { complete: segments.every(r => r.status === "completed"), segments };
+    const usage = segments.reduce((a, r) => ({ input_tokens: a.input_tokens + (r.usage?.input_tokens ?? 0),
+      output_tokens: a.output_tokens + (r.usage?.output_tokens ?? 0) }), { input_tokens: 0, output_tokens: 0 });
+    report.providers[provider] = { complete: segments.every(r => r.status === "completed"), segments, usage };
   }
+  report.duration_sec = duration;
+  report.asr_statistics = { chunks: spans.length + 2, uploaded: spans.length, uploaded_seconds: Math.round(duration * 0.8), skipped_silent: 2, failed: 0 };
   return report;
 }
 
@@ -136,3 +150,75 @@ export function simulateRun(request: ModerationRequest, emit: (event: WorkerEven
   const timers = steps.map(([delay, event]) => window.setTimeout(() => emit(event), delay));
   return () => timers.forEach(t => window.clearTimeout(t));
 }
+
+/** Re-judging prepared inputs (retry or another modality): no sampling or ASR stage. */
+export function simulateEvaluate(request: ModerationRequest & { retry_failed?: boolean }, emit: (event: WorkerEvent) => void) {
+  const report = demoReport(request, { fixFailures: true });
+  const tag = { job_id: request.job_id, video_path: request.video_path };
+  const progress = (message: string): WorkerEvent => ({ type: "moderation.progress", message, ...tag });
+  const steps: [number, WorkerEvent][] = [[150, progress("复用已准备的画面与转写")]];
+  let end = 300;
+  for (const [provider, result] of Object.entries(report.providers)) {
+    const total = request.retry_failed ? 1 : result.segments.length;
+    steps.push([300, progress(`${provider}: 完成 0/${total}`)]);
+    for (let i = 1; i <= total; i++) steps.push([300 + i * 80, progress(`${provider}: 完成 ${i}/${total}`)]);
+    end = Math.max(end, 300 + total * 80);
+  }
+  steps.push([end + 200, { type: "moderation.completed", message: report.report_path, report, ...tag }]);
+  const timers = steps.map(([delay, event]) => window.setTimeout(() => emit(event), delay));
+  return () => timers.forEach(t => window.clearTimeout(t));
+}
+
+const SPEECH = ["大家好，今天带你们看看这个地方。", "你再说一遍试试？", "这个东西真的太好用了，链接在评论区。",
+  "别跑！站住！", "我们下次再见。", "（背景音乐）"];
+
+/** Request/response commands of the real worker, answered locally. */
+export function demoRequest(action: string, payload: Record<string, unknown>): Promise<WorkerEvent> {
+  const reply = (fields: Record<string, unknown>, delay = 200) =>
+    new Promise<WorkerEvent>(resolve => window.setTimeout(() => resolve({ type: action, ...fields }), delay));
+  switch (action) {
+    case "segment_evidence": {
+      const id = Number(payload.segment_id);
+      const path = String(payload.video_path ?? payload.report_path);
+      return reply({ segment_id: id, start_sec: Number(payload.start_sec ?? 0), end_sec: Number(payload.end_sec ?? 0),
+        speech_text: SPEECH[id % SPEECH.length], audio_status: "transcribed", alignment_precision: "speech_chunk", frame_count: 6,
+        frames: Array.from({ length: 6 }, (_, i) => ({ time_sec: Number(payload.start_sec ?? 0) + i * 0.8, data_url: demoThumbnail(`${path}#${id}-${i}`) })) });
+    }
+    case "segment_clip":
+      return reply({ error: "DEMO 预览不提供片段视频；桌面端会用 FFmpeg 截取该片段" });
+    case "save_review":
+      return reply({ report_path: payload.report_path, review: payload.decision
+        ? { decision: payload.decision, note: payload.note ?? "", at: new Date().toISOString() } : null }, 80);
+    case "list_history": {
+      const entries = [1, 2, 3].map(i => {
+        const path = `D:/videos/history/${String(i).padStart(2, "0")}-往期素材.mp4`;
+        const report = demoReport({ provider: "both", modality: "multimodal", segment_seconds: 8, video_path: path });
+        return { report, review: i === 2 ? { decision: "allow", note: "人工复核：剧情表演", at: "2026-10-30T10:00:00" } : null,
+                 runs: 1, finished_at: Date.now() - i * 86400000 };
+      });
+      return reply({ entries }, 300);
+    }
+    case "save_settings":
+      try { localStorage.setItem("svm-demo-settings", JSON.stringify(payload.settings)); } catch { /* preview only */ }
+      return reply({ stored_keys: {} }, 50);
+    case "split_video": {
+      const duration = Number(payload.duration_sec ?? 1500);
+      const count = Math.ceil(duration / 590);
+      const source = String(payload.video_path);
+      return reply({ id: payload.id, parts: Array.from({ length: count }, (_, i) => ({
+        path: source.replace(/(\.\w+)$/, `-part${String(i).padStart(3, "0")}$1`), start_sec: i * 590,
+        end_sec: Math.min(duration, (i + 1) * 590) })) }, 400);
+    }
+    default:
+      return reply({ error: "DEMO 预览不支持该操作" });
+  }
+}
+
+export const DEMO_PRESETS = {
+  sexual: { label: "色情", question: "Does this segment show sexual activity, sexualized nudity or sexually explicit speech?",
+            positive: "Explicit sexual acts or sexualized nudity.", negative: "Non-sexual nudity or swimwear." },
+  gambling: { label: "赌博", question: "Does this segment promote gambling or illegal betting services?",
+              positive: "Advertising or inviting viewers to gambling platforms.", negative: "Games without stakes." },
+  fraud_ads: { label: "诈骗引流", question: "Does this segment lure viewers off-platform or into scams?",
+               positive: "Private contact details, get-rich-quick or investment scams.", negative: "Legitimate labelled ads." },
+};

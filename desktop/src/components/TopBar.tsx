@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fmtClock, fmtDuration } from "../lib/report";
+import { finalVerdict, fmtClock, fmtDuration } from "../lib/report";
 import type { BatchInfo, EngineState } from "../useModeration";
 import type { VideoItem } from "../types";
 
@@ -22,15 +22,16 @@ function useNow(active = true) {
 
 export default function TopBar({ preview, engine, busy, videos, batch, queueActive, limit }: Props) {
   const now = useNow();
-  const count = (test: (v: VideoItem) => boolean) => videos.filter(test).length;
+  // Counts cover this batch; a reviewer's final decision replaces the model verdict.
+  const count = (test: (v: VideoItem) => boolean) => videos.filter(v => !v.history && test(v)).length;
   const running = videos.filter(v => v.status === "running");
   const elapsed = batch ? (batch.finishedAt && !queueActive ? batch.finishedAt : now) - batch.startedAt : null;
   const tone = (n: number, t: string) => (n ? t : undefined);
-  const block = count(v => v.verdict === "block"), review = count(v => v.verdict === "review"), failed = count(v => v.status === "failed");
+  const block = count(v => finalVerdict(v) === "block"), review = count(v => finalVerdict(v) === "review"), failed = count(v => v.status === "failed");
   const kpis: { label: string; zh: string; value: string; tone?: string; wide?: boolean; title?: string }[] = [
     { label: "NOW", zh: "审核中", value: `${running.length}/${limit}`, title: running.map(v => v.name).join("\n") },
     { label: "QUEUE", zh: "排队", value: String(count(v => v.status === "queued")) },
-    { label: "PASS", zh: "通过", value: String(count(v => v.verdict === "allow")), tone: "allow" },
+    { label: "PASS", zh: "通过", value: String(count(v => finalVerdict(v) === "allow")), tone: "allow" },
     { label: "BLOCK", zh: "拦截", value: String(block), tone: tone(block, "block") },
     { label: "HOLD", zh: "待定", value: String(review), tone: tone(review, "review") },
     { label: "FAIL", zh: "失败", value: String(failed), tone: tone(failed, "failed") },

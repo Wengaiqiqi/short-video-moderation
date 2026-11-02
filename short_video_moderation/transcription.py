@@ -323,6 +323,7 @@ def transcribe_video_blocks(
     cloud_requester: MimoRequester | None = None,
     audio_extractor: AudioExtractor | None = None,
     cloud_limiter: Any = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     started_at = time.perf_counter()
     video = Path(video_path)
@@ -371,6 +372,7 @@ def transcribe_video_blocks(
             requester=cloud_requester,
             audio_extractor=audio_extractor,
             limiter=cloud_limiter,
+            should_stop=should_stop,
         )
         utterance_count = sum(
             len(block.get("utterances", [])) for block in block_transcripts

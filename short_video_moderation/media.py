@@ -5,6 +5,7 @@ import math
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +22,26 @@ _SUBPROCESS_KWARGS = (
 
 class FFmpegError(UserFacingError):
     pass
+
+
+def run_cancellable(command, *, should_stop=None, timeout=600.0):
+    """Run a subprocess, polling ``should_stop`` so a cancelled video stops FFmpeg promptly."""
+    from .errors import Cancelled
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **_SUBPROCESS_KWARGS)
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            stdout, stderr = process.communicate(timeout=0.3)
+            return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired:
+            if should_stop and should_stop():
+                process.kill()
+                process.communicate()
+                raise Cancelled()
+            if time.monotonic() > deadline:
+                process.kill()
+                process.communicate()
+                raise
 
 
 @dataclass(frozen=True)

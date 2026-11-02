@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSize } from "../lib/useSize";
-import { VERDICTS, VERDICT_ZH, phaseOf, providerLabel, stageProgress, type Phase, type Verdict } from "../lib/report";
+import { VERDICTS, VERDICT_ZH, finalVerdict, phaseOf, providerLabel, stageProgress, type Phase, type Verdict } from "../lib/report";
 import type { Stages } from "../useModeration";
 import type { StageState, VideoItem } from "../types";
 
@@ -106,7 +106,8 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
   }, [videos, stagesById]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const inDisc = videos.filter(v => v.status === "queued" || v.status === "running" || exiting[v.id]);
-  const landed = videos.filter(v => (v.status === "done" || v.status === "failed") && !exiting[v.id]);
+  // Bins show this batch (history stays in the results list); a reviewer's final decision moves a video.
+  const landed = videos.filter(v => (v.status === "done" || v.status === "failed") && !exiting[v.id] && !v.history);
   const runningVideos = videos.filter(v => v.status === "running");
   const phases = runningVideos.map(v => phaseOf(stagesById[v.id]));
   const preparing = phases.filter(p => p === "prepare" || p === "queued").length;
@@ -202,7 +203,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
         </g>)}
         {/* Burst: a video finishes — tile → both rails → merge → its bin */}
         {placed.filter(p => exiting[p.video.id]).map(({ video, slot }) => {
-          const verdict = video.verdict ?? "review";
+          const verdict = finalVerdict(video) ?? "review";
           const x0 = slot.x + geometry.size / 2, y0 = slot.y + geometry.size / 2;
           const toRail = (yy: number) => `M${x0},${y0} C${(x0 + geometry.xIn) / 2},${y0} ${geometry.xIn - 80},${yy} ${geometry.xIn},${yy}`;
           const tone = video.status === "failed" ? "failed" : verdict;
@@ -225,7 +226,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
       {placed.map(({ video, slot }) => {
         const leaving = !!exiting[video.id];
         const stages = stagesById[video.id];
-        const cls = `tile ${leaving ? `exiting v-${video.status === "failed" ? "failed" : video.verdict}` : video.status}${selected === video.id ? " selected" : ""}`;
+        const cls = `tile ${leaving ? `exiting v-${video.status === "failed" ? "failed" : finalVerdict(video)}` : video.status}${selected === video.id ? " selected" : ""}`;
         return <button key={video.id} type="button" className={cls} style={{ left: slot.x, top: slot.y, width: geometry.size, height: geometry.size }}
           title={`${video.name}${video.status === "queued" ? " · 排队中" : video.status === "running" ? " · 审核中" : ""}`}
           onClick={() => onSelect(selected === video.id ? null : video.id)}>
@@ -236,7 +237,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
             <span className="tile-state">{runningLabel(stages)}</span>
             <span className="tile-progress"><i style={{ width: `${(stages ? stageProgress(stages) : 0) * 100}%` }} /></span>
           </>}
-          {leaving && <span className="tile-verdict">{video.status === "failed" ? "失败" : VERDICT_ZH[video.verdict ?? "review"]}</span>}
+          {leaving && <span className="tile-verdict">{video.status === "failed" ? "失败" : VERDICT_ZH[finalVerdict(video) ?? "review"]}</span>}
         </button>;
       })}
       {hidden > 0 && (() => {
@@ -268,7 +269,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
       {/* Verdict bins hold finished videos; click a bin to list them, a cover to open that video */}
       {VERDICTS.map(v => {
         const b = geometry.bins[v.id];
-        const items = landed.filter(x => x.verdict === v.id);
+        const items = landed.filter(x => finalVerdict(x) === v.id);
         const failed = items.filter(x => x.status === "failed").length;
         // Cover grid: 6 per row inside the bin padding; show as many whole rows as fit.
         const thumb = clamp(Math.floor((b.w - 32 - 5 * 5) / 6), 18, 30);
@@ -281,7 +282,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
           <div className="bin-zh">{v.zh}{failed > 0 && <small className="bin-failed">失败 {failed}</small>}</div>
           <div className="bin-thumbs">
             {items.length > shown.length && <span className="bin-more" style={{ width: thumb, height: thumb }}>+{items.length - shown.length}</span>}
-            {shown.map(x => <button key={x.id} type="button" className={`bin-thumb${selected === x.id ? " selected" : ""}${x.status === "failed" ? " failed" : ""}`}
+            {shown.map(x => <button key={x.id} type="button" className={`bin-thumb${selected === x.id ? " selected" : ""}${x.status === "failed" ? " failed" : ""}${x.review ? " reviewed" : ""}`}
               style={{ width: thumb, height: thumb }} title={x.name} onClick={() => onSelect(x.id)}>
               {x.thumb ? <img src={x.thumb} alt={x.name} draggable={false} /> : <span>{x.name.slice(0, 1)}</span>}
             </button>)}

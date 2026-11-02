@@ -13,6 +13,7 @@ dependencies = ["Pillow>=10", "httpx>=0.27,<1"]
 [project.optional-dependencies]
 local-asr = ["faster-whisper>=1.2.1,<2"]
 desktop-build = ["pyinstaller>=6,<7"]
+keychain = ["keyring>=24"]
 
 [project.scripts]
 short-video-moderation = "short_video_moderation.pipeline:main"
