@@ -220,15 +220,16 @@ def save_settings(settings):
 
 def reveal_command(path, platform=None):
     """Command that opens the file manager with the report selected (Windows, macOS) or its folder (Linux)."""
-    import sys
+    import ntpath, posixpath, sys
     platform = platform or sys.platform
-    target = os.path.normpath(str(path))
+    paths = ntpath if platform == 'win32' else posixpath  # the target system's rules, not the host's
+    target = paths.normpath(str(path))
     if platform == 'win32':
         # explorer wants /select,"path" as written; its exit code is 1 even on success.
         return f'explorer /select,"{target}"'
     if platform == 'darwin':
         return ['open', '-R', target]
-    return ['xdg-open', os.path.dirname(target)]
+    return ['xdg-open', paths.dirname(target)]
 
 
 def reveal_report(report_path):

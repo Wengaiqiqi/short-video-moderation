@@ -17,13 +17,16 @@ class DesktopTests(unittest.TestCase):
     def test_worker_initializes_and_rejects_removed_workflows(self):
         commands = '\n'.join(json.dumps(c) for c in [
             {'action': 'initialize'}, {'action': 'start_classroom_job'}, []]) + '\n'
-        result = subprocess.run([sys.executable, '-m', 'short_video_moderation.worker'],
-                                input=commands, capture_output=True, text=True, encoding='utf-8',
-                                env={**os.environ, 'PYTHONIOENCODING': 'utf-8'}, timeout=20, check=True)
-        events = [json.loads(line) for line in result.stdout.splitlines()]
-        self.assertEqual([e['type'] for e in events], ['worker.ready', 'worker.error', 'worker.error'])
-        self.assertNotIn('llm_api_key', events[0]['settings'])
-        self.assertIn('short-video-moderation', events[0]['settings']['output_root'])
+        # A fresh runtime root, so settings saved on this machine do not leak into the defaults.
+        with tempfile.TemporaryDirectory() as runtime:
+            result = subprocess.run([sys.executable, '-m', 'short_video_moderation.worker'],
+                                    input=commands, capture_output=True, text=True, encoding='utf-8',
+                                    env={**os.environ, 'PYTHONIOENCODING': 'utf-8', 'SVM_RUNTIME_ROOT': runtime},
+                                    timeout=20, check=True)
+            events = [json.loads(line) for line in result.stdout.splitlines()]
+            self.assertEqual([e['type'] for e in events], ['worker.ready', 'worker.error', 'worker.error'])
+            self.assertNotIn('llm_api_key', events[0]['settings'])
+            self.assertEqual(Path(events[0]['settings']['output_root']), Path(runtime) / 'results')
 
     def test_folder_listing_keeps_only_videos(self):
         with tempfile.TemporaryDirectory() as directory:
