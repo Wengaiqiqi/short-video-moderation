@@ -1,58 +1,94 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import ModelSettings from "./components/ModelSettings";
+import Detail from "./components/Detail";
+import Feed from "./components/Feed";
+import FlowMap from "./components/FlowMap";
+import Pipeline from "./components/Pipeline";
 import Results from "./components/Results";
+import TaskPanel, { type TaskForm } from "./components/TaskPanel";
+import TopBar from "./components/TopBar";
+import { DEMO_VIDEO } from "./demo";
+import { segmentsOf, visibleProviders, type ProviderFilter } from "./lib/report";
 import { useModeration } from "./useModeration";
-import type { ModerationRequest } from "./types";
+import type { Stage, StageId } from "./types";
+
+/** Rough share of the whole run, for the hairline under the top bar. */
+function progressOf(stages: Record<StageId, Stage>, busy: boolean, finished: boolean) {
+  if (finished) return 1;
+  if (!busy) return 0;
+  const providers = (["jev", "openai"] as const).filter(id => stages[id].state !== "skip");
+  let value = stages.prepare.state === "run" ? 0.08 : stages.prepare.state === "pass" ? 0.24 : 0.02;
+  if (stages.align.state === "pass") value = 0.3;
+  for (const id of providers) {
+    const stage = stages[id];
+    const share = stage.state === "pass" || stage.state === "warn" ? 1 : stage.total ? (stage.done ?? 0) / stage.total : 0;
+    value += (0.68 / providers.length) * share;
+  }
+  return Math.min(0.99, value);
+}
 
 export default function App() {
-  const { settings, setSettings, busy, message, report, start } = useModeration();
-  const [video, setVideo] = useState("");
-  const [provider, setProvider] = useState<ModerationRequest["provider"]>("both");
-  const [modality, setModality] = useState<ModerationRequest["modality"]>("multimodal");
-  const [key, setKey] = useState("");
-  const [interval, setInterval] = useState(0.5);
-  const [seconds, setSeconds] = useState(8);
-  const [consent, setConsent] = useState(false);
+  const { preview, settings, setSettings, busy, engine, message, report, log, stages, run, start } = useModeration();
+  const [form, setForm] = useState<TaskForm>({ video: "", provider: "both", modality: "multimodal", key: "", interval: 0.5, seconds: 8, consent: false });
   const [error, setError] = useState("");
-  async function choose(directory = false) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [filter, setFilter] = useState<ProviderFilter>("all");
+  const [selected, setSelected] = useState<number | null>(null);
+  const update = (patch: Partial<TaskForm>) => setForm(f => ({ ...f, ...patch }));
+
+  const providers = useMemo(() => visibleProviders(report, filter), [report, filter]);
+  const segments = useMemo(() => segmentsOf(report, providers), [report, providers]);
+  const segment = segments.find(s => s.id === selected) ?? null;
+  const cloudAsr = (run?.asrEngine ?? settings?.asr_engine) === "mimo-cloud";
+
+  async function browse(directory: boolean) {
+    if (preview) { if (!directory) update({ video: DEMO_VIDEO }); return; }
     try {
       const path = await open(directory ? { directory: true, multiple: false } : { multiple: false, filters: [{ name: "视频", extensions: ["mp4", "mkv", "mov", "webm"] }] });
       if (typeof path === "string") {
         if (directory && settings) setSettings({ ...settings, output_root: path });
-        else setVideo(path);
+        else update({ video: path });
       }
     } catch (e) { setError(String(e)); }
   }
-  return <main>
-    <header><p className="eyebrow">SHORT VIDEO MODERATION</p><h1>短视频内容审核</h1><p>以讲话时间组合画面，比较 Jev 与多模态模型的审核结果。</p></header>
-    <form onSubmit={e => {
-      e.preventDefault(); setError("");
-      if (!settings || !video.trim() || !settings.output_root.trim() || !consent) { setError("请选择视频和结果目录，并确认发送内容。"); return; }
-      void start({ video_path: video, output_root: settings.output_root, provider, modality, jev_key: key, interval, segment_seconds: seconds, settings, upload_consent: consent });
-    }}>
-      <fieldset disabled={busy || !settings}>
-        <section className="card"><h2>审核任务</h2>
-          <div className="path-field"><label>视频文件<input value={video} onChange={e => setVideo(e.target.value)} placeholder="选择或输入视频的完整路径" /></label><button type="button" onClick={() => { void choose(); }}>选择视频</button></div>
-          <div className="path-field"><label>结果目录<input value={settings?.output_root || ""} onChange={e => settings && setSettings({ ...settings, output_root: e.target.value })} /></label><button type="button" onClick={() => { void choose(true); }}>选择目录</button></div>
-          <div className="grid">
-            <label>模型组<select value={provider} onChange={e => setProvider(e.target.value as typeof provider)}><option value="both">Jev ＋ 多模态对照组</option><option value="jev">仅 Jev</option><option value="openai">仅多模态对照组</option></select></label>
-            <label>输入模态<select value={modality} onChange={e => setModality(e.target.value as typeof modality)}><option value="multimodal">画面 ＋ 转写</option><option value="visual">仅画面</option><option value="text">仅转写</option></select></label>
-            {provider !== "openai" && <label>Jev API Key<input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} placeholder="或设置 TYPESAFE_API_KEY 环境变量" /></label>}
-          </div>
-          <details><summary>抽样与时间段</summary><div className="grid"><label>定时抽帧间隔（秒）<input type="number" min={0.15} max={4} step={0.05} required value={interval} onChange={e => setInterval(Number(e.target.value))} /></label>
-            <label>单段最长时长（秒）<input type="number" min={1} max={30} step={1} required value={seconds} onChange={e => setSeconds(Number(e.target.value))} /></label></div>
-            <p className="muted">画面抽样和语音识别并行，场景变化时补帧；静音区间独立审核。云端无逐句时间戳时按音频块对齐，每段最多 16 帧。</p></details>
-        </section>
-        {settings && <ModelSettings settings={settings} onChange={setSettings} />}
-        <section className="card"><label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />允许将所选模态的画面/转写发送至模型服务；使用云端 ASR 时也会发送音频。</label>
-          <button className="primary" type="submit">{busy ? "审核中…" : "开始审核"}</button>
-          <p className="muted">当前示例规则覆盖暴力、仇恨与骚扰；最长支持 10 分钟视频。</p>
-        </section>
-      </fieldset>
-    </form>
-    <div className="status" role="status" aria-live="polite">{message}</div>
-    {error && <p role="alert">{error}</p>}
-    {report && <Results report={report} />}
-  </main>;
+
+  function submit() {
+    setError("");
+    if (!settings || !form.video.trim() || !settings.output_root.trim() || !form.consent) {
+      setError("请选择视频和结果目录，并确认发送内容。");
+      return;
+    }
+    setSelected(null); setFilter("all");
+    void start({ video_path: form.video, output_root: settings.output_root, provider: form.provider, modality: form.modality,
+                 jev_key: form.key, interval: form.interval, segment_seconds: form.seconds, settings, upload_consent: form.consent });
+  }
+
+  const progress = progressOf(stages, busy, !!report && !busy);
+  return <div className={`app${collapsed ? " collapsed" : ""}`}>
+    <TopBar preview={preview} engine={engine} busy={busy} report={report} visible={providers}
+      segmentsKnown={stages.jev.total ?? stages.openai.total} filter={filter} onFilter={setFilter}
+      run={run} video={run?.video ?? form.video} />
+    <div className="progress-line" role="progressbar" aria-label="审核进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+      <i style={{ width: `${progress * 100}%` }} className={busy ? "busy" : undefined} />
+    </div>
+    <div className="workspace">
+      <TaskPanel form={form} update={update} settings={settings} setSettings={setSettings} busy={busy} error={error} preview={preview}
+        collapsed={collapsed} onCollapse={setCollapsed} onBrowse={d => { void browse(d); }} onSubmit={submit} />
+      <section className="panel flow-panel">
+        <header className="panel-head">
+          <span><b>SIGNAL MAP</b> · 片段流向{preview && report && <span className="tag demo">DEMO 数据</span>}</span>
+          <span className="meta">左：按时长排布的审核窗口（自上而下即视频时间）→ 中：处理阶段 → 右：判定</span>
+        </header>
+        <FlowMap report={report} providers={providers} stages={stages} busy={busy} selected={selected} onSelect={setSelected}
+          meta={{ interval: form.interval, segmentSeconds: form.seconds, cloud: cloudAsr,
+                  asr: cloudAsr ? `MiMo ${settings?.mimo_model ?? ""}` : `whisper ${settings?.asr_model ?? ""}` }} />
+      </section>
+    </div>
+    <div className="dock">
+      <Feed log={log} />
+      <Pipeline stages={stages} message={message} />
+      <Results report={report} providers={providers} segments={segments} selected={selected} onSelect={setSelected} preview={preview} />
+      <Detail report={report} providers={providers} segment={segment} cloudAsr={cloudAsr} />
+    </div>
+  </div>;
 }

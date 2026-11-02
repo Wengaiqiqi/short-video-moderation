@@ -11,10 +11,20 @@ export interface ModerationRow {
   segment_id: number; start_sec: number; end_sec: number;
   status: string; action: string; probabilities?: Record<string, number>;
   error_type?: string; model?: string;
+  elapsed_sec?: number; visual_evidence?: string; score_kind?: string;
+}
+export interface ModerationPolicy {
+  version?: string;
+  review_threshold: number; block_threshold: number;
+  categories: Record<string, unknown>;
 }
 export interface ModerationReport {
   report_path: string;
-  providers: Record<string, { complete: boolean; segments: ModerationRow[] }>;
+  providers: Record<string, { complete: boolean; segments: ModerationRow[]; config?: { model?: string; base_url?: string } }>;
+  policy?: ModerationPolicy;
+  modality?: ModerationRequest["modality"];
+  input_hash?: string;
+  sampling?: { interval_sec?: number; segment_sec?: number };
 }
 export interface WorkerEvent {
   type: string; message?: string; error?: string; settings?: Settings; report?: ModerationReport;
@@ -26,3 +36,10 @@ export interface ModerationRequest {
   jev_key: string; interval: number; segment_seconds: number;
   settings: Settings; upload_consent: boolean;
 }
+
+/** One line in the FEED panel. Kept in memory for the current window only. */
+export interface LogEntry { id: number; at: number; level: "info" | "run" | "ok" | "warn" | "error"; tag: string; text: string }
+
+export type StageId = "engine" | "prepare" | "align" | "jev" | "openai" | "report";
+export type StageState = "wait" | "run" | "pass" | "warn" | "fail" | "skip";
+export interface Stage { id: StageId; state: StageState; done?: number; total?: number }
