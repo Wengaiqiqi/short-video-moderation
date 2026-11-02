@@ -10,14 +10,14 @@ import Results, { type Rerun } from "./components/Results";
 import TaskPanel, { type TaskForm } from "./components/TaskPanel";
 import TopBar from "./components/TopBar";
 import { VERDICT_ZH, categoryLabel, disagreements, finalVerdict, providersOf, segmentsOf, stageProgress, tally,
-         tokensOf, visibleProviders, type ProviderFilter, type Verdict } from "./lib/report";
+         tokensOf, transcriptVerdict, visibleProviders, type ProviderFilter, type Verdict } from "./lib/report";
 import { freshStages, useModeration, type RunConfig } from "./useModeration";
 import type { VideoItem } from "./types";
 
 /** One CSV row per video: the final verdict next to the model verdict, counts, main category and usage. */
 function exportRows(videos: VideoItem[]) {
   const header = ["视频", "路径", "最终结论", "模型结论", "人工终判", "备注", "片段数", "拦截段", "待定段", "失败段", "分歧段",
-                  "主要类别", "最高分", "tokens", "完成时间", "报告"];
+                  "全文判断", "主要类别", "最高分", "tokens", "完成时间", "报告"];
   return [header, ...videos.map(v => {
     const counts = Object.values(tally(v.report, providersOf(v.report)));
     const sum = (k: "block" | "review" | "failed") => counts.reduce((a, c) => a + c[k], 0);
@@ -25,10 +25,11 @@ function exportRows(videos: VideoItem[]) {
     for (const data of Object.values(v.report?.providers ?? {})) for (const row of data.segments)
       for (const [c, p] of Object.entries(row.probabilities ?? {})) if (p > peak) { peak = p; top = c; }
     const verdict = finalVerdict(v);
+    const text = transcriptVerdict(v.report);
     return [v.name, v.part?.source ?? v.path, verdict ? VERDICT_ZH[verdict] : "失败", v.verdict ? VERDICT_ZH[v.verdict] : "",
             v.review ? VERDICT_ZH[v.review.decision] : "", v.review?.note ?? "",
             Math.max(0, ...Object.values(v.report?.providers ?? {}).map(p => p.segments.length)), sum("block"), sum("review"), sum("failed"),
-            disagreements(v.report).size, top ? categoryLabel(top, v.report) : "", peak.toFixed(3),
+            disagreements(v.report).size, text ? VERDICT_ZH[text] : "", top ? categoryLabel(top, v.report) : "", peak.toFixed(3),
             Object.values(v.report?.providers ?? {}).reduce((a, p) => a + tokensOf(p.usage), 0),
             v.finishedAt ? new Date(v.finishedAt).toLocaleString("zh-CN", { hour12: false }) : "", v.report?.report_path ?? ""];
   })];
@@ -188,7 +189,7 @@ export default function App() {
         onCancel={m.cancelVideo} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }}
         onReveal={async path => { const answer = await m.request("reveal_report", { report_path: path }); return answer.error ? String(answer.error) : undefined; }} />
       <Detail video={video} videos={videos} providers={providers} segment={segment} cloudAsr={cloudAsr} settings={settings}
-        request={m.request} onOpenEvidence={() => setEvidenceOpen(true)} onCalibrate={() => setCalibrating(true)} />
+        request={m.request} onOpenEvidence={() => setEvidenceOpen(true)} onCalibrate={() => setCalibrating(true)} onSegment={setSegmentId} />
     </div>
     {evidenceOpen && video && segment && <EvidenceModal video={video} segments={segments} segment={segment} providers={providers}
       request={m.request} onSegment={setSegmentId} onClose={() => setEvidenceOpen(false)}

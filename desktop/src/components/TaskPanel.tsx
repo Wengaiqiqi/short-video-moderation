@@ -95,6 +95,10 @@ export default function TaskPanel(props: Props) {
                 onChange={v => setSettings({ ...settings, skip_reviewed: v })} />
               <Toggle label="命中拦截即停止送审" checked={!!settings.stop_on_block} title="一段被拦截后，剩余片段不再送审（报告会不完整）"
                 onChange={v => setSettings({ ...settings, stop_on_block: v })} />
+              <Toggle label="全文判断" checked={settings.full_text !== false} title="整段转写再判断一次，识别跨句的隐喻和暗语；只有全文报出时归入待定"
+                onChange={v => setSettings({ ...settings, full_text: v })} />
+              <Toggle label="片段附带前后句" checked={settings.speech_context !== false} title="每个片段同时发送前后各一句，仅作理解语义的上下文"
+                onChange={v => setSettings({ ...settings, speech_context: v })} />
               <Toggle label="自动切分超过 10 分钟的视频" checked={settings.split_long_videos !== false}
                 onChange={v => setSettings({ ...settings, split_long_videos: v })} />
             </div>}

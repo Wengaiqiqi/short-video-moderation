@@ -3,7 +3,7 @@
  * event handler as the real worker so the layout can be reviewed without models or API keys.
  * Everything produced here is labelled DEMO in the UI and is never a moderation result.
  */
-import type { ModerationReport, ModerationRequest, ModerationRow, Settings, WorkerEvent } from "./types";
+import type { ModerationReport, ModerationRequest, ModerationRow, Settings, TranscriptJudgement, TranscriptSentence, WorkerEvent } from "./types";
 
 export const DEMO_SETTINGS: Settings = {
   output_root: "~/.cache/short-video-moderation/runtime/results",
@@ -13,6 +13,7 @@ export const DEMO_SETTINGS: Settings = {
   mimo_base_url: "https://api.xiaomimimo.com/v1", mimo_model: "mimo-v2.5-asr",
   video_concurrency: 11,
   skip_reviewed: true, stop_on_block: false, split_long_videos: true, remember_keys: false, keychain_available: false,
+  full_text: true, speech_context: true,
   ffmpeg_path: "", ffprobe_path: "",
 };
 
@@ -77,11 +78,19 @@ export const DEMO_POLICY = {
     positive: `Clear ${c}.`, negative: `No ${c}.` }])),
 };
 
+const SPEECH = ["大家好，今天带你们看看这个地方。", "你再说一遍试试？", "这个东西真的太好用了，链接在评论区。",
+  "别跑！站住！", "我们下次再见。", "先把东西放这儿。", "今天天气还不错。", "这个角度拍出来更好看。"];
+/** Harmless one by one; a veiled threat when read together. */
+const VEILED = ["你家住哪儿，我可清楚得很。", "最近晚上出门，小心点。", "有些人啊，就是记性不好。", "好好想想该怎么做。"];
+/** Demo speech per window, so the evidence panel shows the same text as the transcript. */
+const demoSpeech = new Map<string, Map<number, string>>();
+
 /** Each demo video gets a profile from its path: clean, borderline or clearly violating. */
-export function demoReport(request: Pick<ModerationRequest, "provider" | "modality" | "segment_seconds" | "video_path">,
+export function demoReport(request: Pick<ModerationRequest, "provider" | "modality" | "segment_seconds" | "video_path"> & { settings?: Settings },
                            options: { fixFailures?: boolean } = {}): ModerationReport {
   const seed = hash(request.video_path);
   // 0,1 clean · 2,3 borderline · 4 violating; demo files cycle through a fixed mix.
+  // Profile 1 is clean window by window but carries a veiled threat that only the whole transcript shows.
   const index = Number(/\/(\d+)-/.exec(request.video_path)?.[1] ?? NaN);
   const profile = Number.isFinite(index) ? [0, 2, 4, 1, 0, 3, 0, 4, 1, 2, 0, 3][(index - 1) % 12] : seed % 5;
   const peak = profile < 2 ? 0.22 : profile < 4 ? 0.58 : 0.93;
@@ -121,6 +130,57 @@ export function demoReport(request: Pick<ModerationRequest, "provider" | "modali
   }
   report.duration_sec = duration;
   report.asr_statistics = { chunks: spans.length + 2, uploaded: spans.length, uploaded_seconds: Math.round(duration * 0.8), skipped_silent: 2, failed: 0 };
+
+  // Speech: one sentence per window, every fifth window silent; the veiled threat sits around the hot spot.
+  const spoken = request.modality !== "visual";
+  const hot = Math.min(spans.length - VEILED.length, Math.max(0, Math.round(hotCenter * spans.length) - 1));
+  const speech = new Map<number, string>();
+  const sentences: TranscriptSentence[] = [];
+  spans.forEach(([start, end], index) => {
+    if (index % 5 === 4) return;
+    const veiled = profile === 1 && index >= hot && index < hot + VEILED.length;
+    const text = veiled ? VEILED[index - hot] : SPEECH[(seed + index) % SPEECH.length];
+    speech.set(index + 1, text);
+    sentences.push({ id: sentences.length + 1, start_sec: Math.round((start + 0.2) * 100) / 100,
+                     end_sec: Math.round((end - 0.2) * 100) / 100, text, segments: [index + 1] });
+  });
+  demoSpeech.set(request.video_path, speech);
+  report.speech_context = spoken && request.settings?.speech_context !== false;
+  report.full_text = spoken && request.settings?.full_text !== false;
+  if (report.full_text) {
+    report.transcript = sentences;
+    for (const provider of providers) {
+      const next = random(seed + (provider === "jev" ? 41 : 43));
+      const probabilities = Object.fromEntries(CATEGORIES.map(c => [c, Math.round((0.03 + next() * 0.12) * 1000) / 1000]));
+      const flagged: number[] = [];
+      if (profile === 1) {
+        probabilities.harassment = provider === "jev" ? 0.78 : 0.88;
+        flagged.push(...sentences.filter(s => VEILED.includes(s.text)).map(s => s.id));
+      } else if (profile === 4) {
+        probabilities[hotCategory] = Math.min(0.97, peak + 0.02);
+        const middle = sentences.reduce((a, s) => Math.abs(s.start_sec / duration - hotCenter) < Math.abs(a.start_sec / duration - hotCenter) ? s : a, sentences[0]);
+        if (middle) flagged.push(middle.id);
+      }
+      const top = Math.max(...Object.values(probabilities));
+      const text: TranscriptJudgement = {
+        status: "completed", action: top >= 0.8 ? "block" : top >= 0.65 ? "review" : "allow", probabilities,
+        sentence_count: sentences.length, passages: 1, elapsed_sec: Math.round((1.4 + next() * 1.6) * 10) / 10,
+        model: provider === "jev" ? DEMO_SETTINGS.jev_model : DEMO_SETTINGS.llm_model,
+        usage: { input_tokens: 600 + sentences.length * 40, output_tokens: 40 },
+      };
+      if (!sentences.length) Object.assign(text, { status: "skipped", action: "allow", skip_reason: "no_speech" });
+      // JEV returns scores only; the baseline names the sentences.
+      if (provider === "openai" && flagged.length) {
+        const key = profile === 1 ? "harassment" : hotCategory;
+        text.sentences = { [key]: flagged };
+        text.windows = [...new Set(flagged.flatMap(id => sentences[id - 1].segments))].sort((a, b) => a - b);
+      }
+      const data = report.providers[provider];
+      data.transcript = text;
+      data.usage = { input_tokens: (data.usage?.input_tokens ?? 0) + (text.usage?.input_tokens ?? 0),
+                     output_tokens: (data.usage?.output_tokens ?? 0) + (text.usage?.output_tokens ?? 0) };
+    }
+  }
   return report;
 }
 
@@ -140,7 +200,7 @@ export function simulateRun(request: ModerationRequest, emit: (event: WorkerEven
   // Both providers run at the same time, a few windows in flight each.
   let end = at;
   for (const [provider, result] of Object.entries(report.providers)) {
-    const total = result.segments.length;
+    const total = result.segments.length + (result.transcript ? 1 : 0);
     steps.push([at, progress(`${provider}: 完成 0/${total}`)]);
     for (let i = 1; i <= total; i++) steps.push([at + i * (90 + next() * 60) * speed, progress(`${provider}: 完成 ${i}/${total}`)]);
     end = Math.max(end, steps[steps.length - 1][0]);
@@ -158,7 +218,7 @@ export function simulateEvaluate(request: ModerationRequest & { retry_failed?: b
   const steps: [number, WorkerEvent][] = [[150, progress("复用已准备的画面与转写")]];
   let end = 300;
   for (const [provider, result] of Object.entries(report.providers)) {
-    const total = request.retry_failed ? 1 : result.segments.length;
+    const total = request.retry_failed ? 1 : result.segments.length + (result.transcript ? 1 : 0);
     steps.push([300, progress(`${provider}: 完成 0/${total}`)]);
     for (let i = 1; i <= total; i++) steps.push([300 + i * 80, progress(`${provider}: 完成 ${i}/${total}`)]);
     end = Math.max(end, 300 + total * 80);
@@ -167,9 +227,6 @@ export function simulateEvaluate(request: ModerationRequest & { retry_failed?: b
   const timers = steps.map(([delay, event]) => window.setTimeout(() => emit(event), delay));
   return () => timers.forEach(t => window.clearTimeout(t));
 }
-
-const SPEECH = ["大家好，今天带你们看看这个地方。", "你再说一遍试试？", "这个东西真的太好用了，链接在评论区。",
-  "别跑！站住！", "我们下次再见。", "（背景音乐）"];
 
 /** Request/response commands of the real worker, answered locally. */
 export function demoRequest(action: string, payload: Record<string, unknown>): Promise<WorkerEvent> {
@@ -180,7 +237,7 @@ export function demoRequest(action: string, payload: Record<string, unknown>): P
       const id = Number(payload.segment_id);
       const path = String(payload.video_path ?? payload.report_path);
       return reply({ segment_id: id, start_sec: Number(payload.start_sec ?? 0), end_sec: Number(payload.end_sec ?? 0),
-        speech_text: SPEECH[id % SPEECH.length], audio_status: "transcribed", alignment_precision: "speech_chunk", frame_count: 6,
+        speech_text: demoSpeech.get(String(payload.video_path))?.get(id) ?? "", audio_status: "transcribed", alignment_precision: "speech_chunk", frame_count: 6,
         frames: Array.from({ length: 6 }, (_, i) => ({ time_sec: Number(payload.start_sec ?? 0) + i * 0.8, data_url: demoThumbnail(`${path}#${id}-${i}`) })) });
     }
     case "segment_clip":

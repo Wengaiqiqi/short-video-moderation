@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { DEMO_POLICY, DEMO_PRESETS, DEMO_SETTINGS, demoRequest, demoThumbnail, demoVideos, simulateEvaluate, simulateRun } from "./demo";
-import { baseName, providerLabel, VERDICT_ZH, videoVerdict } from "./lib/report";
+import { baseName, providerLabel, semanticOnly, VERDICT_ZH, videoVerdict } from "./lib/report";
 import type { LogEntry, ModerationReport, ModerationRequest, ReviewDecision, Settings, Stage, StageId, VideoItem, WorkerEvent } from "./types";
 
 export type EngineState = "connecting" | "ready" | "running" | "error";
@@ -202,7 +202,7 @@ export function useModeration() {
         // Keep the feed readable with many videos: log stage changes, not every window.
         if (model) {
           const [, provider, done, total] = model;
-          if (done === "0") append("run", providerLabel(provider), `${item.name} · 开始分类（${total} 段）`);
+          if (done === "0") append("run", providerLabel(provider), `${item.name} · 开始分类（${total} 项）`);
           else if (done === total) append("run", providerLabel(provider), `${item.name} · 分类完成`);
         } else if (asr) {
           if (asr[1] === asr[2]) append("run", "语音", `${item.name} · 语音识别 ${asr[2]} 段完成`);
@@ -223,9 +223,9 @@ export function useModeration() {
           return next;
         });
         const incomplete = Object.entries(report?.providers ?? {}).filter(([, data]) => !data.complete);
-        if (incomplete.length) append("warn", "复核", `${item.name} · ${incomplete.map(([p]) => providerLabel(p)).join("、")} 存在失败片段，需人工复核`);
+        if (incomplete.length) append("warn", "复核", `${item.name} · ${incomplete.map(([p]) => providerLabel(p)).join("、")} 存在失败项，需人工复核`);
         append(verdict === "allow" ? "ok" : verdict === "block" ? "error" : "warn", payload.cached ? "已审" : VERDICT_ZH[verdict],
-               `${item.name} → ${VERDICT_ZH[verdict]}${payload.cached ? "（复用此前结果）" : ""}`);
+               `${item.name} → ${VERDICT_ZH[verdict]}${semanticOnly(report) ? "（全文语义）" : ""}${payload.cached ? "（复用此前结果）" : ""}`);
         finish(id, { status: "done", report, verdict, error: undefined, cached: !!payload.cached });
         return;
       }

@@ -1,4 +1,4 @@
-import type { ModerationReport, ModerationRow } from "../types";
+import type { ModerationReport, ModerationRow, TranscriptJudgement } from "../types";
 
 /** The three bins of the flow map. Failed segments always land in "review" (待定 / 人工复核). */
 export type Verdict = "allow" | "block" | "review";
@@ -21,7 +21,7 @@ export function categoryLabel(id: string, report?: ModerationReport | null) {
   return report?.policy?.categories?.[id]?.label ?? CATEGORY_LABEL[id] ?? id;
 }
 
-export function verdictOf(row: ModerationRow): Verdict {
+export function verdictOf(row: Pick<ModerationRow, "status" | "action">): Verdict {
   if (row.status === "skipped") return "allow";
   if (row.status !== "completed") return "review";
   return row.action === "block" ? "block" : row.action === "allow" ? "allow" : "review";
@@ -141,11 +141,8 @@ export function baseName(path: string) {
 }
 export function pad2(n: number) { return String(n).padStart(2, "0"); }
 
-/**
- * Whole-video verdict, strictest wins: any window blocked by any provider → block;
- * otherwise any review or failed window (or nothing judged at all) → review; else allow.
- */
-export function videoVerdict(report: ModerationReport | null | undefined): Verdict {
+/** Strictest verdict over every window of every provider; nothing judged at all → review. */
+export function windowVerdict(report: ModerationReport | null | undefined): Verdict {
   let verdict: Verdict = "allow";
   let rows = 0;
   for (const result of Object.values(report?.providers ?? {})) {
@@ -156,6 +153,70 @@ export function videoVerdict(report: ModerationReport | null | undefined): Verdi
     }
   }
   return rows ? verdict : "review";
+}
+
+/** Whole-transcript judgements of the given providers (all when omitted). */
+export function transcriptsOf(report: ModerationReport | null | undefined, providers?: string[]) {
+  const out: [string, TranscriptJudgement][] = [];
+  for (const provider of providers ?? providersOf(report)) {
+    const text = report?.providers[provider]?.transcript;
+    if (text) out.push([provider, text]);
+  }
+  return out;
+}
+/** Strictest whole-transcript verdict, or null when the run had none. */
+export function transcriptVerdict(report: ModerationReport | null | undefined): Verdict | null {
+  const texts = transcriptsOf(report);
+  if (!texts.length) return null;
+  return texts.map(([, t]) => verdictOf(t)).reduce((a, b) => (SEVERITY[b] > SEVERITY[a] ? b : a), "allow" as Verdict);
+}
+
+/**
+ * Whole-video verdict. Windows: strictest wins (any block → block; any review or failure → review).
+ * The whole-transcript judgement joins strictest-wins, except that when it alone finds a problem
+ * (every window passed) the video is held for review rather than blocked: see semanticOnly.
+ */
+export function videoVerdict(report: ModerationReport | null | undefined): Verdict {
+  const windows = windowVerdict(report);
+  const text = transcriptVerdict(report);
+  if (!text || text === "allow") return windows;
+  if (windows === "allow") return "review";
+  return SEVERITY[text] > SEVERITY[windows] ? text : windows;
+}
+/** Only the whole-transcript judgement found a problem (shown as 「全文语义」). */
+export function semanticOnly(report: ModerationReport | null | undefined) {
+  const text = transcriptVerdict(report);
+  return !!text && text !== "allow" && windowVerdict(report) === "allow";
+}
+/** Windows holding sentences that the whole-transcript judgement named, per window the categories. */
+export function semanticWindows(report: ModerationReport | null | undefined, providers?: string[]) {
+  const out = new Map<number, Set<string>>();
+  const byId = new Map((report?.transcript ?? []).map(s => [s.id, s]));
+  for (const [, text] of transcriptsOf(report, providers)) {
+    if (text.status !== "completed") continue;
+    for (const [category, ids] of Object.entries(text.sentences ?? {})) {
+      for (const id of ids) for (const window of byId.get(id)?.segments ?? []) {
+        if (!out.has(window)) out.set(window, new Set());
+        out.get(window)!.add(category);
+      }
+    }
+  }
+  return out;
+}
+/** Sentence id → categories named for it by the given providers' whole-transcript judgements. */
+export function flaggedSentences(report: ModerationReport | null | undefined, providers?: string[]) {
+  const out = new Map<number, Set<string>>();
+  for (const [, text] of transcriptsOf(report, providers)) {
+    if (text.status !== "completed") continue;
+    for (const [category, ids] of Object.entries(text.sentences ?? {})) for (const id of ids) {
+      if (!out.has(id)) out.set(id, new Set());
+      out.get(id)!.add(category);
+    }
+  }
+  return out;
+}
+export function transcriptFailures(report: ModerationReport | null | undefined) {
+  return transcriptsOf(report).filter(([, t]) => t.status === "failed").length;
 }
 export const VERDICT_ZH: Record<Verdict, string> = { allow: "通过", block: "拦截", review: "待定" };
 
@@ -214,7 +275,8 @@ export interface Cost { tokens: Record<string, number>; asrSeconds: number }
 export function costOf(report: ModerationReport | null | undefined): Cost {
   const tokens: Record<string, number> = {};
   for (const [provider, data] of Object.entries(report?.providers ?? {})) {
-    tokens[provider] = tokensOf(data.usage) || data.segments.reduce((a, r) => a + tokensOf(r.usage), 0);
+    tokens[provider] = tokensOf(data.usage)
+      || data.segments.reduce((a, r) => a + tokensOf(r.usage), 0) + tokensOf(data.transcript?.usage);
   }
   return { tokens, asrSeconds: report?.asr_statistics?.uploaded_seconds ?? 0 };
 }
