@@ -23,15 +23,13 @@ function useNow(active = true) {
 export default function TopBar({ preview, engine, busy, videos, batch, queueActive, limit }: Props) {
   const now = useNow();
   const count = (test: (v: VideoItem) => boolean) => videos.filter(test).length;
-  const finished = count(v => v.status === "done" || v.status === "failed");
   const running = videos.filter(v => v.status === "running");
   const elapsed = batch ? (batch.finishedAt && !queueActive ? batch.finishedAt : now) - batch.startedAt : null;
   const tone = (n: number, t: string) => (n ? t : undefined);
   const block = count(v => v.verdict === "block"), review = count(v => v.verdict === "review"), failed = count(v => v.status === "failed");
-  const kpis: { label: string; zh: string; value: string; tone?: string; wide?: boolean }[] = [
-    { label: "NOW", zh: `审核中（并发上限 ${limit}）`, value: running.length ? `${running.length} 个 · ${running[0].name}` : "—", wide: true },
+  const kpis: { label: string; zh: string; value: string; tone?: string; wide?: boolean; title?: string }[] = [
+    { label: "NOW", zh: "审核中", value: `${running.length}/${limit}`, title: running.map(v => v.name).join("\n") },
     { label: "QUEUE", zh: "排队", value: String(count(v => v.status === "queued")) },
-    { label: "DONE", zh: "已审", value: String(finished) },
     { label: "PASS", zh: "通过", value: String(count(v => v.verdict === "allow")), tone: "allow" },
     { label: "BLOCK", zh: "拦截", value: String(block), tone: tone(block, "block") },
     { label: "HOLD", zh: "待定", value: String(review), tone: tone(review, "review") },
@@ -41,12 +39,11 @@ export default function TopBar({ preview, engine, busy, videos, batch, queueActi
   return <header className="topbar">
     <div className="brand">
       <div className="brand-title"><i className="brand-mark" />SVM <span>/</span> MODERATION LAB</div>
-      <div className="brand-sub">短视频内容审核 · JEV × 多模态对照
-        <span className="tag warn">阈值未校准</span>{preview && <span className="tag demo">DEMO 浏览器预览</span>}</div>
+      <div className="brand-sub"><span className="tag warn" title="阈值为实验配置，尚未用验证集校准">阈值未校准</span>{preview && <span className="tag demo">DEMO</span>}</div>
     </div>
     <dl className="kpis" aria-label="视频统计">
       {kpis.map(k => <div key={k.label} className={`kpi${k.wide ? " wide" : ""}`}>
-        <dt><b>{k.zh}</b> <span className="en">{k.label}</span></dt><dd className={k.tone ? `t-${k.tone}` : undefined} title={k.value}>{k.value}</dd>
+        <dt><b>{k.zh}</b> <span className="en">{k.label}</span></dt><dd className={k.tone ? `t-${k.tone}` : undefined} title={k.title || k.value}>{k.value}</dd>
       </div>)}
     </dl>
     <div className="top-actions">

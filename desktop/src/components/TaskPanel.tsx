@@ -59,7 +59,7 @@ export default function TaskPanel(props: Props) {
               <button type="button" onClick={props.onAddFolder} disabled={!settings}>＋ 整个文件夹</button>
             </div>
             <div className="path-field compact">
-              <input aria-label="视频路径" value={path} spellCheck={false} placeholder={preview ? "浏览器预览：点上方按钮添加 DEMO 视频" : "或粘贴视频完整路径后加入"}
+              <input aria-label="视频路径" value={path} spellCheck={false} placeholder={preview ? "DEMO：用上方按钮添加" : "粘贴视频路径"}
                 onChange={e => setPath(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (path.trim()) { props.onAddPath(path); setPath(""); } } }} />
               <button type="button" disabled={!path.trim()} onClick={() => { props.onAddPath(path); setPath(""); }}>加入</button>
@@ -74,7 +74,7 @@ export default function TaskPanel(props: Props) {
             </ol>}
             {queued > 1 && <button type="button" className="link-button" onClick={props.onClearQueued}>清空排队</button>}
             {/* Can be changed while the queue runs; takes effect as videos finish */}
-            {settings && <label className="field inline-field">同时处理视频数
+            {settings && <label className="field inline-field">并发视频
               <span className="stepper">
                 <button type="button" aria-label="减少并发" onClick={() => setSettings({ ...settings, video_concurrency: Math.max(1, (settings.video_concurrency ?? 11) - 1) })}>−</button>
                 <input type="number" min={1} max={32} step={1} value={settings.video_concurrency ?? 11}
@@ -92,7 +92,7 @@ export default function TaskPanel(props: Props) {
               <Segmented legend="输入模态" name="modality" value={form.modality} onChange={modality => update({ modality })}
                 options={[{ value: "multimodal", label: "画面＋转写" }, { value: "visual", label: "仅画面" }, { value: "text", label: "仅转写" }]} />
               {form.provider !== "openai" && <label className="field">JEV API Key<input type="password" autoComplete="off" value={form.key}
-                onChange={e => update({ key: e.target.value })} placeholder="或设置 TYPESAFE_API_KEY 环境变量" /></label>}
+                onChange={e => update({ key: e.target.value })} placeholder="或 TYPESAFE_API_KEY" /></label>}
             </div>
             <div className="group">
               <h3>抽样与窗口</h3>
@@ -100,7 +100,6 @@ export default function TaskPanel(props: Props) {
                 <label className="field">定时抽帧（秒）<input type="number" min={0.15} max={4} step={0.05} required value={form.interval} onChange={e => update({ interval: Number(e.target.value) })} /></label>
                 <label className="field">单段最长（秒）<input type="number" min={1} max={30} step={1} required value={form.seconds} onChange={e => update({ seconds: Number(e.target.value) })} /></label>
               </div>
-              <p className="hint">画面抽样与语音识别并行，场景变化时补帧；静音区间独立审核。每段最多 16 帧，单个视频最长 10 分钟。</p>
             </div>
           </fieldset>
         </>}
@@ -108,12 +107,11 @@ export default function TaskPanel(props: Props) {
       </div>
       <div className="task-foot">
         <label className="consent"><input type="checkbox" checked={form.consent} disabled={locked} onChange={e => update({ consent: e.target.checked })} />
-          <span>允许将所选模态的画面/转写发送至模型服务；使用云端 ASR 时也会发送音频。</span></label>
+          <span>允许发送画面与转写至模型服务（云端 ASR 含音频）</span></label>
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className={`primary${queueActive ? " stop" : ""}`} type="submit" disabled={!settings || (!queueActive && queued === 0)}>
           {queueActive ? "暂停队列（当前视频完成后）" : `${preview ? "运行 DEMO" : "开始审核"} · ${queued} 个视频`}
         </button>
-        <p className="hint">队列中的视频并行审核；整段视频按最严结论归入通过 / 拦截 / 待定。</p>
       </div>
     </form>
   </aside>;

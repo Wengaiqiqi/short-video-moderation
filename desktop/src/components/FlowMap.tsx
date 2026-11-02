@@ -178,7 +178,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
       </defs>
       <path className="disc-halo" d={`M${geometry.cx},${geometry.cy - geometry.R - 14} A${geometry.R + 14},${geometry.R + 14} 0 0 1 ${geometry.cx},${geometry.cy + geometry.R + 14}`} />
       <path className="disc-edge" d={`M${geometry.cx},${geometry.cy - geometry.R} A${geometry.R},${geometry.R} 0 0 1 ${geometry.cx},${geometry.cy + geometry.R}`} />
-      {geometry.slots.map((s, i) => <rect key={i} className="slot" x={s.x} y={s.y} width={geometry.size} height={geometry.size} rx={2} />)}
+      {geometry.slots.map((s, i) => <rect key={i} className="slot" x={s.x} y={s.y} width={geometry.size} height={geometry.size} rx={9} />)}
 
       {/* Rails: disc → 画面切分 / 语音识别 (in parallel) → merge into 分类判断 → three bins */}
       <path className={`rail s-${state.frames}`} d={geometry.paths.inTop} markerEnd={`url(#arrow-${state.frames})`} />
@@ -219,8 +219,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
 
     {geometry && <>
       {placed.length === 0 && <div className="disc-note" style={{ left: geometry.cx + geometry.R * 0.1, top: geometry.cy - 26, width: geometry.R * 0.82 }}>
-        {landed.length ? <><b>QUEUE CLEAR</b><span>本批 {landed.length} 个视频已归类，可继续添加</span></>
-          : <><b>NO INPUT</b><span>添加视频或文件夹后开始审核</span></>}
+        {landed.length ? <><b>QUEUE CLEAR</b><span>{landed.length} 个已归类</span></> : <><b>NO INPUT</b><span>等待视频</span></>}
       </div>}
 
       {placed.map(({ video, slot }) => {
@@ -242,27 +241,27 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
       })}
       {hidden > 0 && (() => {
         const slot = geometry.slots[geometry.slots.length - 1];
-        return <div className="tile more" style={{ left: slot.x, top: slot.y, width: geometry.size, height: geometry.size }}>+{hidden + 1}<small>排队</small></div>;
+        return <div className="tile more" style={{ left: slot.x, top: slot.y, width: geometry.size, height: geometry.size }}>+{hidden + 1}</div>;
       })()}
 
       {/* Stages: 画面切分 (top) and 语音识别 (bottom) run in parallel and merge into 分类判断 (middle) */}
       {[
         { key: "frames" as const, no: "01", zh: "画面切分", en: "FRAME SPLIT", y: geometry.y.top, tall: false,
-          sub: `定时 ${meta.interval}s ＋ 场景补帧 · 窗口内去重`, count: preparing },
+          sub: `${meta.interval}s · 场景补帧`, count: preparing },
         { key: "classify" as const, no: "03", zh: "分类判断", en: "CLASSIFY", y: geometry.y.mid, tall: true,
-          sub: `JEV ＋ 对照并发 · ≤${meta.segmentSeconds}s 窗口 · 取最严归类`, count: classifying },
+          sub: `≤${meta.segmentSeconds}s 窗口 · 取最严`, count: classifying },
         { key: "asr" as const, no: "02", zh: "语音识别", en: "ASR", y: geometry.y.bot, tall: false,
-          sub: meta.cloud ? `${meta.asr} · 静音切分 ≤${meta.segmentSeconds}s` : `${meta.asr} · 语音驱动窗口`, count: asrBusy },
+          sub: meta.cloud ? `${meta.asr} · 静音切分` : meta.asr, count: asrBusy },
       ].map(stage => {
         const s = state[stage.key];
         return <div key={stage.key} className={`stage s-${s}${stage.tall ? " hub" : ""}${s === "run" && stage.tall ? " hot" : ""}${geometry.midW < 230 ? " compact" : geometry.midW < 330 ? " snug" : ""}`}
           style={{ left: geometry.midX, top: stage.y - (stage.tall ? 29 : 25), width: geometry.midW }}>
           <span className="stage-no">{stage.no}</span>
           <div className="stage-body">
-            <div className="stage-title"><b>{stage.zh}</b><em>{stage.en}</em>{!stage.tall && <i className="stage-par">并行</i>}</div>
+            <div className="stage-title"><b>{stage.zh}</b><em>{stage.en}</em></div>
             <div className="stage-sub">{stage.sub}</div>
           </div>
-          <span className="stage-state">{s === "run" ? `RUN ×${stage.count}` : STATE_TEXT[s]}</span>
+          <span className="stage-state" title={STATE_TEXT[s]}><i />{s === "run" ? stage.count : ""}</span>
         </div>;
       })}
 
@@ -271,14 +270,15 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
         const b = geometry.bins[v.id];
         const items = landed.filter(x => x.verdict === v.id);
         const failed = items.filter(x => x.status === "failed").length;
-        const thumb = clamp(Math.floor((b.w - 24 - 4 * 5) / 6), 18, 30);
-        const fit = Math.max(0, Math.floor((b.h - 74) / (thumb + 4))) * 6;
+        // Cover grid: 6 per row inside the bin padding; show as many whole rows as fit.
+        const thumb = clamp(Math.floor((b.w - 32 - 5 * 5) / 6), 18, 30);
+        const fit = Math.max(0, Math.floor((b.h - 96 + 5) / (thumb + 5))) * 6;
         const shown = items.length > fit ? items.slice(-(Math.max(0, fit - 1))) : items;
         return <div key={v.id} className={`bin v-${v.id}${bin === v.id ? " on" : ""}`} style={{ left: b.x, top: b.y, width: b.w, height: b.h }}>
           <button type="button" className="bin-hit" aria-pressed={bin === v.id} onClick={() => onBin(bin === v.id ? null : v.id)}
             aria-label={`${v.zh}：${items.length} 个视频，点击查看列表`} />
           <div className="bin-head"><span className="bin-en">{v.en}</span><span className="bin-count">×{items.length}</span></div>
-          <div className="bin-zh">{v.zh}{v.id === "review" && <small>人工复核</small>}{failed > 0 && <small className="bin-failed">含处理失败 {failed}</small>}</div>
+          <div className="bin-zh">{v.zh}{failed > 0 && <small className="bin-failed">失败 {failed}</small>}</div>
           <div className="bin-thumbs">
             {items.length > shown.length && <span className="bin-more" style={{ width: thumb, height: thumb }}>+{items.length - shown.length}</span>}
             {shown.map(x => <button key={x.id} type="button" className={`bin-thumb${selected === x.id ? " selected" : ""}${x.status === "failed" ? " failed" : ""}`}
@@ -289,10 +289,6 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
         </div>;
       })}
 
-      <div className="flow-legend" style={{ left: geometry.midX, bottom: 10, width: geometry.midW }}>
-        <span>方块 = 视频封面 · 画面与语音两路并行，汇入分类判断</span>
-        <span>流光 = 数据流向 · 颜色 = 判定结果 · <i className="lg-dot v-failed" />失败归入待定</span>
-      </div>
     </>}
   </div>;
 }

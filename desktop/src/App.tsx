@@ -86,11 +86,10 @@ export default function App() {
       <section className="panel flow-panel">
         <header className="panel-head">
           <span><b>SIGNAL MAP</b> · 视频流向{preview && <span className="tag demo">DEMO 数据</span>}</span>
-          <span className="meta">左：待审视频 → 中：处理阶段 → 右：判定（点击查看）</span>
         </header>
         <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin}
           meta={{ interval: form.interval, segmentSeconds: form.seconds, cloud: cloudAsr,
-                  asr: cloudAsr ? `MiMo ${settings?.mimo_model ?? ""}` : `whisper ${settings?.asr_model ?? ""}` }} />
+                  asr: cloudAsr ? "MiMo" : `Whisper ${settings?.asr_model ?? ""}` }} />
       </section>
     </div>
     <div className="dock">

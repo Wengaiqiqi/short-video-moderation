@@ -6,10 +6,10 @@ const MODALITY: Record<string, string> = { multimodal: "画面＋转写", visual
 
 function Caveats({ cloudAsr }: { cloudAsr: boolean }) {
   return <ul className="caveats">
-    <li>阈值为实验配置，尚未用验证集校准。</li>
-    <li>JEV 概率与对照模型自报分数含义不同，不宜直接比较数值。</li>
-    <li>片段时间范围不等于精确的违规发生时间；抽样可能漏掉短暂事件。</li>
-    {cloudAsr && <li className="warn">云端 ASR 没有逐句时间戳：按静音切分成语音段识别，时间精度为语音段级。</li>}
+    <li>阈值未校准</li>
+    <li>JEV 概率 ≠ 对照自报分数</li>
+    <li>片段范围 ≠ 违规时刻</li>
+    {cloudAsr && <li className="warn">云端 ASR 时间为语音段级</li>}
   </ul>;
 }
 
@@ -30,7 +30,7 @@ export default function Detail({ video, providers, segment, cloudAsr }: {
         return <div key={provider} className="detail-provider">
           <div className="detail-head"><b>{providerLabel(provider)}</b><VerdictTag row={row} />
             <span className="meta">{row.model ?? ""}{row.elapsed_sec != null ? ` · ${row.elapsed_sec.toFixed(2)}s` : ""}</span></div>
-          {row.evidence === "asr_failed" && <p className="notice v-failed">该段语音识别失败，仅按画面判断，已至少归入待定。</p>}
+          {row.evidence === "asr_failed" && <p className="notice v-failed">语音识别失败，仅按画面判断</p>}
           {isSkipped(row) ? <p className="hint">此窗口没有{row.skip_reason === "no_speech" ? "讲话" : row.skip_reason === "no_visual_evidence" ? "抽样画面" : "可审内容"}，未送审。</p>
             : isFailed(row) ? <p className="notice v-failed">推理失败（{errorText(row.error_type)}），本段需人工复核。</p>
             : categories.map(category => {
@@ -43,7 +43,6 @@ export default function Detail({ video, providers, segment, cloudAsr }: {
                 <span className={`score-value t-${tone}`}>{value.toFixed(3)}</span>
               </div>;
             })}
-          {row.visual_evidence === "no_sample_in_interval" && <p className="hint">此窗口内没有抽样画面。</p>}
         </div>;
       })}
     </div>
@@ -57,7 +56,7 @@ export default function Detail({ video, providers, segment, cloudAsr }: {
         {video.thumb && <img className="detail-cover" src={video.thumb} alt="" />}
         <dl className="facts">
           <div><dt>文件</dt><dd title={video.path}>{video.path}</dd></div>
-          <div><dt>归类</dt><dd>{video.verdict ? `${VERDICT_ZH[video.verdict]}（取最严：任一片段、任一模型）` : "—"}</dd></div>
+          <div><dt>归类</dt><dd>{video.verdict ? VERDICT_ZH[video.verdict] : "—"}</dd></div>
           {Object.entries(counts).map(([p, c]) => <div key={p}><dt>{providerLabel(p)}</dt>
             <dd>通过 {c.allow} · <span className="t-block">拦截 {c.block}</span> · <span className="t-review">待定 {c.review}</span>{c.failed ? <span className="t-failed"> · 失败 {c.failed}</span> : null}</dd></div>)}
           <div><dt>模态</dt><dd>{report?.modality ? MODALITY[report.modality] ?? report.modality : "—"}</dd></div>
@@ -65,7 +64,6 @@ export default function Detail({ video, providers, segment, cloudAsr }: {
           <div><dt>报告</dt><dd title={report?.report_path}>{report?.report_path ?? "—"}</dd></div>
         </dl>
         {video.error && <p className="notice v-failed">{video.error}</p>}
-        {report && <p className="hint">在左侧表格中点击片段查看各类分数。</p>}
       </div>
     </section>;
   }
@@ -75,10 +73,9 @@ export default function Detail({ video, providers, segment, cloudAsr }: {
     <div className="detail">
       <dl className="facts">
         <div><dt>阈值</dt><dd>复核 ≥ {limits.review.toFixed(2)} · 拦截 ≥ {limits.block.toFixed(2)}</dd></div>
-        <div><dt>归类</dt><dd>整段视频取最严：任一片段被任一模型拦截 → 拦截；有待定或失败 → 待定</dd></div>
+        <div><dt>归类</dt><dd>整段取最严</dd></div>
       </dl>
       <Caveats cloudAsr={cloudAsr} />
-      <p className="hint">点击右侧判定格或其中的封面查看审核结果。</p>
     </div>
   </section>;
 }

@@ -51,7 +51,7 @@ function VideoList({ videos, onVideo, bin, onBin }: Props) {
           onClick={() => onBin(bin === v.id ? null : v.id)}>{v.zh} {finished.filter(x => x.verdict === v.id).length}</button>)}
       </span>
     </header>
-    {rows.length === 0 ? <p className="empty">{finished.length ? "这一类还没有视频。" : "暂无结果。视频审核完成后会落入右侧判定格，并列在这里；点击查看逐段结果。"}</p> :
+    {rows.length === 0 ? <p className="empty">{finished.length ? "此类暂无视频" : "暂无结果"}</p> :
       <div className="table-scroll">
         <table>
           <thead><tr><th>视频</th><th>结论</th><th>片段</th><th>拦截段</th><th>待定段</th><th>用时</th></tr></thead>
@@ -101,9 +101,9 @@ function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, p
       </span>
     </header>
     {error && <p className="form-error" role="alert">{error}</p>}
-    {video.status === "failed" ? <p className="notice v-failed">整段处理失败：{video.error}。已归入「待定」，需人工复核或重新审核。</p>
-      : !report ? <p className="empty">{video.status === "running" ? "审核中，完成后在这里显示逐段结果。" : "排队中，尚未审核。"}</p> : <>
-        {failures > 0 && <p className="notice v-failed">{failures} 个片段推理失败，已归入「待定」，需人工复核。</p>}
+    {video.status === "failed" ? <p className="notice v-failed">处理失败：{video.error}</p>
+      : !report ? <p className="empty">{video.status === "running" ? "审核中…" : "排队中"}</p> : <>
+        {failures > 0 && <p className="notice v-failed">{failures} 段失败，已归入待定</p>}
         <div className="table-scroll">
           <table>
             <thead><tr><th>#</th><th>时间</th>{providers.map(p => <th key={p}>{providerLabel(p)}</th>)}<th>峰值</th><th>主类</th></tr></thead>
