@@ -1,0 +1,38 @@
+{
+  "providers": [
+    {
+      "provider": "jev",
+      "base_url": "https://api.typesafe.ai/v1",
+      "model": "jev-1.14.0",
+      "api_key_env": "TYPESAFE_API_KEY"
+    },
+    {
+      "provider": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "api_key_env": "LLM_API_KEY"
+    }
+  ],
+  "policy": {
+    "version": "short-video-research-v1",
+    "review_threshold": 0.4,
+    "block_threshold": 0.8,
+    "categories": {
+      "violence": {
+        "question": "Does this segment depict physical assault, deliberate injury or graphic violence?",
+        "positive": "Visible assault, deliberate harm to people or animals, or graphic injury. Assess depicted content even in fictional scenes.",
+        "negative": "Nonviolent activity, consensual sport without assault, or neutral verbal discussion without violent imagery."
+      },
+      "hate": {
+        "question": "Does this segment endorse hatred, dehumanization or violence against a group defined by ethnicity, nationality, religion, gender, sexual orientation or disability?",
+        "positive": "The speaker or displayed message endorses group-directed hatred, dehumanization, or violence.",
+        "negative": "Neutral quotation, condemnation, counterspeech, or criticism of conduct without attacking a protected group."
+      },
+      "harassment": {
+        "question": "Does this segment target an identifiable person with threats, humiliation or abusive insults?",
+        "positive": "Targeted threats, abusive personal insults, or deliberate humiliation.",
+        "negative": "Respectful criticism, neutral reporting, or non-targeted expression without harassment."
+      }
+    }
+  }
+}

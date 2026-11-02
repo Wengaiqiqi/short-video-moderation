@@ -1,0 +1,9 @@
+{
+  "engine": "faster-whisper",
+  "model": "small",
+  "language": "zh",
+  "device": "cpu",
+  "compute_type": "int8",
+  "initial_prompt": null,
+  "hotwords": null
+}

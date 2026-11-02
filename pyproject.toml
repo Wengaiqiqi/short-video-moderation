@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "short-video-moderation"
+version = "0.1.0"
+description = "Speech-first short-video moderation with Jev and multimodal baseline comparisons"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["Pillow>=10", "httpx>=0.27,<1"]
+
+[project.optional-dependencies]
+local-asr = ["faster-whisper>=1.2.1,<2"]
+desktop-build = ["pyinstaller>=6,<7"]
+
+[project.scripts]
+short-video-moderation = "short_video_moderation.pipeline:main"
+
+[tool.setuptools.packages.find]
+include = ["short_video_moderation*"]
+
+[tool.setuptools.package-data]
+short_video_moderation = ["defaults/*.json"]

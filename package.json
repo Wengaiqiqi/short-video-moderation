@@ -1,0 +1,12 @@
+{
+  "name": "short-video-moderation",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "npm --prefix desktop run dev",
+    "build": "npm --prefix desktop run build",
+    "test": "node scripts/test.mjs",
+    "dist:win": "npm --prefix desktop run dist:win"
+  }
+}
