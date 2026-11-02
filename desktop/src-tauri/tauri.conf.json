@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "短视频审核",
+  "productName": "短视频内容审核系统",
   "version": "0.1.0",
   "identifier": "io.github.wengaiqiqi.short-video-moderation",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "短视频审核",
+        "title": "短视频内容审核系统",
         "width": 1280,
         "height": 900,
         "minWidth": 820,

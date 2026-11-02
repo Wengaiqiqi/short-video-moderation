@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import Calibration from "./components/Calibration";
 import Detail from "./components/Detail";
@@ -10,14 +10,14 @@ import Results, { type Rerun } from "./components/Results";
 import TaskPanel, { type TaskForm } from "./components/TaskPanel";
 import TopBar from "./components/TopBar";
 import { VERDICT_ZH, categoryLabel, disagreements, finalVerdict, providersOf, segmentsOf, stageProgress, tally,
-         tokensOf, visibleProviders, type ProviderFilter, type Verdict } from "./lib/report";
+         tokensOf, transcriptVerdict, visibleProviders, type ProviderFilter, type Verdict } from "./lib/report";
 import { freshStages, useModeration, type RunConfig } from "./useModeration";
 import type { VideoItem } from "./types";
 
 /** One CSV row per video: the final verdict next to the model verdict, counts, main category and usage. */
 function exportRows(videos: VideoItem[]) {
   const header = ["视频", "路径", "最终结论", "模型结论", "人工终判", "备注", "片段数", "拦截段", "待定段", "失败段", "分歧段",
-                  "主要类别", "最高分", "tokens", "完成时间", "报告"];
+                  "全文判断", "主要类别", "最高分", "tokens", "完成时间", "报告"];
   return [header, ...videos.map(v => {
     const counts = Object.values(tally(v.report, providersOf(v.report)));
     const sum = (k: "block" | "review" | "failed") => counts.reduce((a, c) => a + c[k], 0);
@@ -25,17 +25,33 @@ function exportRows(videos: VideoItem[]) {
     for (const data of Object.values(v.report?.providers ?? {})) for (const row of data.segments)
       for (const [c, p] of Object.entries(row.probabilities ?? {})) if (p > peak) { peak = p; top = c; }
     const verdict = finalVerdict(v);
+    const text = transcriptVerdict(v.report);
     return [v.name, v.part?.source ?? v.path, verdict ? VERDICT_ZH[verdict] : "失败", v.verdict ? VERDICT_ZH[v.verdict] : "",
             v.review ? VERDICT_ZH[v.review.decision] : "", v.review?.note ?? "",
             Math.max(0, ...Object.values(v.report?.providers ?? {}).map(p => p.segments.length)), sum("block"), sum("review"), sum("failed"),
-            disagreements(v.report).size, top ? categoryLabel(top, v.report) : "", peak.toFixed(3),
+            disagreements(v.report).size, text ? VERDICT_ZH[text] : "", top ? categoryLabel(top, v.report) : "", peak.toFixed(3),
             Object.values(v.report?.providers ?? {}).reduce((a, p) => a + tokensOf(p.usage), 0),
             v.finishedAt ? new Date(v.finishedAt).toLocaleString("zh-CN", { hour12: false }) : "", v.report?.report_path ?? ""];
   })];
 }
 
+type Theme = "dark" | "light";
+/** Remembered choice, else the system preference. */
+function initialTheme(): Theme {
+  try {
+    const saved = localStorage.getItem("svm-theme");
+    if (saved === "dark" || saved === "light") return saved;
+  } catch { /* storage unavailable */ }
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
 export default function App() {
   const m = useModeration();
+  const [theme, setTheme] = useState<Theme>(initialTheme);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("svm-theme", theme); } catch { /* storage unavailable */ }
+  }, [theme]);
   const { preview, settings, setSettings, busy, videos, queueActive, stagesById } = m;
   const [form, setForm] = useState<TaskForm>({ provider: "both", modality: "multimodal", interval: 0.5, seconds: 8 });
   const [error, setError] = useState("");
@@ -140,7 +156,8 @@ export default function App() {
     ?? [...videos].reverse().find(v => stagesById[v.id]) ?? null;
 
   return <div className={`app${collapsed ? " collapsed" : ""}`}>
-    <TopBar preview={preview} engine={m.engine} busy={busy} videos={videos} batch={m.batch} queueActive={queueActive} limit={m.limit} />
+    <TopBar preview={preview} engine={m.engine} busy={busy} videos={videos} batch={m.batch} queueActive={queueActive} limit={m.limit}
+      calibrated={settings?.policy?.calibrated_at} theme={theme} onTheme={setTheme} />
     <div className="progress-line" role="progressbar" aria-label="队列进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
       <i style={{ width: `${progress * 100}%` }} className={busy ? "busy" : undefined} />
     </div>
@@ -153,11 +170,9 @@ export default function App() {
         onCancel={m.cancelVideo} onCancelAll={m.cancelAll} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }} />
       <section className="panel flow-panel">
         <header className="panel-head">
-          <span><b>视频流向</b>{preview && <span className="tag demo">DEMO</span>}</span>
+          <span><b>视频流向</b>{preview && <span className="tag demo">演示数据</span>}</span>
         </header>
-        <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin}
-          meta={{ interval: form.interval, segmentSeconds: form.seconds, cloud: cloudAsr,
-                  asr: cloudAsr ? "MiMo" : `Whisper ${settings?.asr_model ?? ""}` }} />
+        <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin} />
       </section>
     </div>
     <div className="dock">
@@ -171,9 +186,10 @@ export default function App() {
         onReview={(id, decision) => { void m.setReview(id, decision); }}
         onRetryFailed={id => { const run = runConfig(); if (run) m.retryFailed(id, run); }}
         onRerun={(id, how) => { const run = runConfig(how); if (run) m.reevaluate(id, run); }}
-        onCancel={m.cancelVideo} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }} />
+        onCancel={m.cancelVideo} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }}
+        onReveal={async path => { const answer = await m.request("reveal_report", { report_path: path }); return answer.error ? String(answer.error) : undefined; }} />
       <Detail video={video} videos={videos} providers={providers} segment={segment} cloudAsr={cloudAsr} settings={settings}
-        request={m.request} onOpenEvidence={() => setEvidenceOpen(true)} onCalibrate={() => setCalibrating(true)} />
+        request={m.request} onOpenEvidence={() => setEvidenceOpen(true)} onCalibrate={() => setCalibrating(true)} onSegment={setSegmentId} />
     </div>
     {evidenceOpen && video && segment && <EvidenceModal video={video} segments={segments} segment={segment} providers={providers}
       request={m.request} onSegment={setSegmentId} onClose={() => setEvidenceOpen(false)}
@@ -181,6 +197,7 @@ export default function App() {
     {calibrating && settings && <Calibration videos={videos} policy={settings.policy} onClose={() => setCalibrating(false)}
       onImport={importLabels}
       onApply={patch => settings.policy && setSettings({ ...settings, policy: { ...settings.policy, ...patch,
+        calibrated_at: new Date().toLocaleDateString("zh-CN"),
         review_threshold: Math.round(Math.min(patch.review_threshold ?? settings.policy.review_threshold,
                                               (patch.block_threshold ?? settings.policy.block_threshold) - 0.05) * 100) / 100 } })} />}
   </div>;

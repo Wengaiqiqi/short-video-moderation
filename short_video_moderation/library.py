@@ -216,6 +216,32 @@ def save_settings(settings):
     return stored_key_flags()
 
 
+# ── Show a report in the file manager ───────────────────────────────────────
+
+def reveal_command(path, platform=None):
+    """Command that opens the file manager with the report selected (Windows, macOS) or its folder (Linux)."""
+    import sys
+    platform = platform or sys.platform
+    target = os.path.normpath(str(path))
+    if platform == 'win32':
+        # explorer wants /select,"path" as written; its exit code is 1 even on success.
+        return f'explorer /select,"{target}"'
+    if platform == 'darwin':
+        return ['open', '-R', target]
+    return ['xdg-open', os.path.dirname(target)]
+
+
+def reveal_report(report_path):
+    """Open the folder of a review report with report.json selected. Only paths inside a review job are accepted."""
+    import subprocess
+    job_dir(report_path)  # rejects anything that is not …/moderation-*/evaluation-*/report.json
+    report = Path(str(report_path)).resolve()
+    if not report.is_file():
+        raise FileNotFoundError(f'报告文件不存在：{report}')
+    subprocess.Popen(reveal_command(report), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return report.as_posix()
+
+
 # ── Labels for threshold calibration ────────────────────────────────────────
 
 LABEL_WORDS = {'拦截': True, 'block': True, '1': True, '违规': True, 'true': True,

@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { openPath } from "@tauri-apps/plugin-opener";
 import {
   VERDICTS, VERDICT_ZH, agreement, categoryLabel, disagreements, errorText, finalVerdict, fmtDuration, fmtTime, isFailed, isSkipped,
-  pad2, peakOf, providerLabel, providersOf, segmentsOf, tally, thresholds, verdictOf, visibleProviders,
-  type ProviderFilter, type SegmentView, type Verdict,
+  pad2, peakOf, providerLabel, providersOf, segmentsOf, semanticOnly, semanticWindows, tally, thresholds, transcriptFailures,
+  transcriptsOf, verdictOf, visibleProviders, type ProviderFilter, type SegmentView, type Verdict,
 } from "../lib/report";
-import type { ModerationReport, ModerationRequest, ModerationRow, ReviewDecision, VideoItem } from "../types";
+import type { ModerationReport, ModerationRequest, ModerationRow, ReviewDecision, TranscriptJudgement, VideoItem } from "../types";
 
 export function VerdictTag({ row }: { row?: ModerationRow }) {
   if (!row) return <span className="vtag none">—</span>;
@@ -21,8 +20,41 @@ export function VideoTag({ video }: { video: VideoItem }) {
   if (video.status === "cancelled") return <span className="vtag none">已取消</span>;
   if (video.status === "failed") return <span className="vtag v-failed" title={video.error}>处理失败·待定</span>;
   const verdict = finalVerdict(video) ?? "review";
-  return <span className={`vtag v-${verdict}`} title={video.review ? `人工终判（模型：${VERDICT_ZH[video.verdict ?? "review"]}）` : undefined}>
-    {VERDICT_ZH[verdict]}{video.review ? " · 人工" : ""}</span>;
+  const semantic = !video.review && semanticOnly(video.report);
+  return <span className={`vtag v-${verdict}`}
+    title={video.review ? `人工终判（模型：${VERDICT_ZH[video.verdict ?? "review"]}）` : semantic ? "窗口均通过，全文判断发现问题" : undefined}>
+    {VERDICT_ZH[verdict]}{video.review ? " · 人工" : semantic ? " · 全文" : ""}</span>;
+}
+
+/** Tag for one whole-transcript judgement. */
+function TextTag({ text }: { text: TranscriptJudgement }) {
+  if (text.status === "skipped") return <span className="vtag none">{text.skip_reason === "no_speech" ? "无讲话" : "未送审"}</span>;
+  if (text.status !== "completed") return <span className="vtag v-failed" title={errorText(text.error_type)}>失败·待定</span>;
+  const verdict = verdictOf(text);
+  return <span className={`vtag v-${verdict}`}>{VERDICT_ZH[verdict]}</span>;
+}
+
+/** One line: the whole-transcript verdict of each visible provider and the windows it points to. */
+function FullText({ report, providers, segment, onSegment }: {
+  report: ModerationReport; providers: string[]; segment: number | null; onSegment: (id: number | null) => void;
+}) {
+  const texts = transcriptsOf(report, providers);
+  if (!texts.length) return null;
+  const windows = [...new Set(texts.flatMap(([, t]) => t.windows ?? []))].sort((a, b) => a - b);
+  return <div className="fulltext">
+    <span className="fulltext-name">全文判断</span>
+    {texts.map(([provider, text]) => {
+      const top = Object.entries(text.probabilities ?? {}).sort((a, b) => b[1] - a[1])[0];
+      const detail = [top ? `${categoryLabel(top[0], report)} ${top[1].toFixed(3)}` : "", text.status === "failed" ? errorText(text.error_type) : "",
+                      text.elapsed_sec != null ? `${text.elapsed_sec.toFixed(1)}s` : ""].filter(Boolean).join(" · ");
+      return <span key={provider} className="fulltext-item" title={detail || undefined}>
+        {providers.length > 1 && <span className="meta">{providerLabel(provider)}</span>}<TextTag text={text} /></span>;
+    })}
+    {windows.length > 0 && <span className="fulltext-windows" role="group" aria-label="全文判断定位的片段">
+      {windows.map(id => <button key={id} type="button" className={segment === id ? "on" : undefined}
+        onClick={() => onSegment(segment === id ? null : id)} title="查看此片段">{pad2(id)}</button>)}
+    </span>}
+  </div>;
 }
 
 function topCategory(row: ModerationRow | undefined, report: ModerationReport | null) {
@@ -43,6 +75,8 @@ interface Props {
   onReview: (id: string, decision: ReviewDecision["decision"] | null) => void;
   onRetryFailed: (id: string) => void; onRerun: (id: string, how: Rerun) => void;
   onCancel: (id: string) => void; onRequeue: (id: string) => void;
+  /** Show the report in the file manager; resolves to an error message, if any. */
+  onReveal: (reportPath: string) => Promise<string | undefined>;
 }
 
 /** Finished videos (filtered by bin); opening one shows its per-window verdicts. */
@@ -103,19 +137,23 @@ function VideoList({ videos, onVideo, bin, onBin, scope, onScope, onExport, onRe
   </section>;
 }
 
-function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, preview, onReview, onRetryFailed, onRerun, onCancel, onRequeue }: Props & { video: VideoItem }) {
+function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, preview, onReview, onRetryFailed, onRerun, onCancel, onRequeue, onReveal }: Props & { video: VideoItem }) {
   const [error, setError] = useState("");
-  const [onlySplit, setOnlySplit] = useState(false);
+  const [only, setOnly] = useState<"split" | "semantic" | null>(null);
   const [rerun, setRerun] = useState<Rerun | null>(null);
   const body = useRef<HTMLTableSectionElement>(null);
   useEffect(() => { body.current?.querySelector("tr.on")?.scrollIntoView({ block: "nearest" }); }, [segment]);
-  useEffect(() => { setOnlySplit(false); setRerun(null); }, [video.id]);
+  useEffect(() => { setOnly(null); setRerun(null); }, [video.id]);
   const report = video.report ?? null;
   const all = providersOf(report);
   const providers = visibleProviders(report, filter);
   const split = disagreements(report);
-  const segments: SegmentView[] = segmentsOf(report, providers).filter(s => !onlySplit || split.has(s.id));
-  const failures = segmentsOf(report, all).filter(s => s.failed).length;
+  const semantic = semanticWindows(report, providers);
+  const segments: SegmentView[] = segmentsOf(report, providers)
+    .filter(s => only === "split" ? split.has(s.id) : only === "semantic" ? semantic.has(s.id) : true);
+  const failedWindows = segmentsOf(report, all).filter(s => s.failed).length;
+  const failedText = transcriptFailures(report);
+  const failures = failedWindows + failedText;
   const agree = agreement(report);
   const busy = video.status === "running";
   return <section className="panel dock-panel">
@@ -128,11 +166,12 @@ function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, p
         {all.length > 1 && <span className="chips" role="group" aria-label="显示模型组">
           {(["all", ...all] as string[]).map(id => <button key={id} type="button" className={filter === id ? "on" : undefined} aria-pressed={filter === id}
             onClick={() => onFilter(id)}>{id === "all" ? "全部" : providerLabel(id)}</button>)}
-          {split.size > 0 && <button type="button" className={onlySplit ? "on" : "c-review"} aria-pressed={onlySplit}
-            onClick={() => setOnlySplit(x => !x)} title="只看两组模型结论不一致的片段">分歧 {split.size}</button>}
+          {split.size > 0 && <button type="button" className={only === "split" ? "on" : "c-review"} aria-pressed={only === "split"}
+            onClick={() => setOnly(x => x === "split" ? null : "split")} title="只看两组模型结论不一致的片段">分歧 {split.size}</button>}
         </span>}
-        {report && <button type="button" className="link-button" disabled={preview} title={preview ? "DEMO 预览没有报告文件" : report.report_path}
-          onClick={() => { setError(""); void openPath(report.report_path).catch(e => setError(String(e))); }}>报告 ↗</button>}
+
+        {report && <button type="button" className="link-button" disabled={preview} title={preview ? "演示模式没有报告文件" : `在文件夹中显示：${report.report_path}`}
+          onClick={() => { setError(""); void onReveal(report.report_path).then(message => setError(message ?? "")); }}>报告 ↗</button>}
       </span>
     </header>
     {/* Actions: final decision, retries and re-runs on the prepared inputs */}
@@ -142,9 +181,12 @@ function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, p
           aria-pressed={video.review?.decision === v.id} disabled={busy} onClick={() => onReview(video.id, video.review?.decision === v.id ? null : v.id)}>
           {v.zh}</button>)}
       </span>}
-      {failures > 0 && !busy && <button type="button" className="tool" onClick={() => onRetryFailed(video.id)}>重试失败段 {failures}</button>}
+      {failures > 0 && !busy && <button type="button" className="tool" onClick={() => onRetryFailed(video.id)}
+        title={failedText ? "重新发送失败的片段和全文判断" : undefined}>重试失败 {failures}</button>}
       {report && !busy && <button type="button" className={`tool${rerun ? " on" : ""}`} onClick={() => setRerun(r => r ? null : { provider: "both", modality: report.modality ?? "multimodal" })}>重新审核</button>}
       {busy && <button type="button" className="tool danger" onClick={() => onCancel(video.id)}>取消</button>}
+      {semantic.size > 0 && <button type="button" className={`tool semantic-filter${only === "semantic" ? " on" : ""}`} aria-pressed={only === "semantic"}
+        onClick={() => setOnly(x => x === "semantic" ? null : "semantic")} title="只看全文判断定位到的片段">全文定位 {semantic.size}</button>}
       {(video.status === "failed" || video.status === "cancelled") && <button type="button" className="tool" onClick={() => onRequeue(video.id)}>重新排队</button>}
     </div>
     {rerun && <div className="rerun">
@@ -158,7 +200,9 @@ function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, p
     {video.status === "failed" ? <p className="notice v-failed">处理失败：{video.error}</p>
       : video.status === "cancelled" && !report ? <p className="empty">已取消</p>
       : !report ? <p className="empty">{busy ? "审核中…" : "排队中"}</p> : <>
-        {failures > 0 && <p className="notice v-failed">{failures} 段失败，已归入待定</p>}
+        {failures > 0 && <p className="notice v-failed">
+          {[failedWindows ? `${failedWindows} 段失败` : "", failedText ? "全文判断失败" : ""].filter(Boolean).join("，")}，已归入待定</p>}
+        <FullText report={report} providers={providers} segment={segment} onSegment={onSegment} />
         <div className="table-scroll">
           <table>
             <thead><tr><th>#</th><th>时间</th>{providers.map(p => <th key={p}>{providerLabel(p)}</th>)}<th>峰值</th><th>主类</th></tr></thead>
@@ -167,10 +211,13 @@ function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, p
               const peak = Math.max(...providers.map(p => peakOf(s.rows[p])));
               const limits = thresholds(report);
               const offset = video.part?.start_sec ?? 0;
-              return <tr key={s.id} className={`${segment === s.id ? "on" : ""}${split.has(s.id) ? " split" : ""}`} tabIndex={0} aria-selected={segment === s.id}
+              const named = semantic.get(s.id);
+              return <tr key={s.id} className={`${segment === s.id ? "on" : ""}${split.has(s.id) ? " split" : ""}${named ? " semantic" : ""}`}
+                tabIndex={0} aria-selected={segment === s.id}
                 onClick={() => onSegment(segment === s.id ? null : s.id)}
                 onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSegment(segment === s.id ? null : s.id); } }}>
-                <td className="num">{pad2(s.id)}</td>
+                <td className="num">{pad2(s.id)}{named && <i className="sem-mark"
+                  title={`全文判断定位到本片段的语句：${[...named].map(c => categoryLabel(c, report)).join("、")}`} />}</td>
                 <td className="num">{fmtTime(s.start + offset)}–{fmtTime(s.end + offset)}</td>
                 {providers.map(p => <td key={p}><VerdictTag row={s.rows[p]} /></td>)}
                 <td className={`num ${peak >= limits.block ? "t-block" : peak >= limits.review ? "t-review" : ""}`}>{peak.toFixed(3)}</td>

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .cloud_asr import WavSlicer, detect_silences, extract_full_audio, plan_speech_chunks
 from .errors import Cancelled
-from .providers import ProviderConfig, evaluate
+from .providers import ProviderConfig, evaluate, evaluate_transcript
 from .sampling import SamplingConfig, dedupe_frames, effective_min_segment, prepare_video
 from .alignment import align_evidence
 from .media import FFmpegTools, _SUBPROCESS_KWARGS
@@ -213,8 +213,82 @@ def missing_evidence(segment, modality):
     return None if has_frames or has_text else 'asr_failed' if asr_failed else 'no_evidence'
 
 
+def transcript_sentences(segments):
+    """The whole transcript as numbered sentences [{id, start_sec, end_sec, text, segments}].
+
+    Each utterance appears once even when it overlaps several windows; ``segments`` lists those windows.
+    """
+    seen = {}
+    for segment in segments:
+        for utterance in segment.get('utterances') or []:
+            text = str(utterance.get('text', '')).strip()
+            if text:
+                key = (round(float(utterance['start_sec']), 3), round(float(utterance['end_sec']), 3), text)
+                seen.setdefault(key, set()).add(segment['segment_id'])
+    ordered = sorted(seen.items(), key=lambda item: (item[0][0], item[0][1]))
+    return [{'id': index + 1, 'start_sec': start, 'end_sec': end, 'text': text, 'segments': sorted(ids)}
+            for index, ((start, end, text), ids) in enumerate(ordered)]
+
+
+CONTEXT_MAX_GAP_SEC = 10.0
+
+
+def speech_contexts(segments, sentences, max_gap=CONTEXT_MAX_GAP_SEC):
+    """The sentence just before and just after each window ({segment_id: {before, after}}).
+
+    Neighbours further than ``max_gap`` seconds from the window are left out: they are not context.
+    """
+    out = {}
+    for segment in segments:
+        sid, start, end = segment['segment_id'], segment['start_sec'], segment['end_sec']
+        inside = [i for i, s in enumerate(sentences) if sid in s['segments']]
+        if inside:
+            before_i, after_i = inside[0] - 1, inside[-1] + 1
+        else:
+            before_i = max((i for i, s in enumerate(sentences) if s['end_sec'] <= start + 1e-6), default=-1)
+            after_i = min((i for i, s in enumerate(sentences) if s['start_sec'] >= end - 1e-6), default=len(sentences))
+        context = {}
+        if before_i >= 0 and start - sentences[before_i]['end_sec'] <= max_gap:
+            context['before'] = sentences[before_i]['text']
+        if after_i < len(sentences) and sentences[after_i]['start_sec'] - end <= max_gap:
+            context['after'] = sentences[after_i]['text']
+        if context:
+            out[sid] = context
+    return out
+
+
+TRANSCRIPT_MAX_CHARS = 12000
+
+
+def transcript_passages(sentences, max_chars=TRANSCRIPT_MAX_CHARS, overlap=3):
+    """Split a very long transcript into passages of at most ``max_chars``, overlapping by a few sentences."""
+    passages, start = [], 0
+    while start < len(sentences):
+        end, size = start, 0
+        while end < len(sentences) and (end == start or size + len(sentences[end]['text']) <= max_chars):
+            size += len(sentences[end]['text'])
+            end += 1
+        passages.append(sentences[start:end])
+        if end >= len(sentences):
+            break
+        start = max(start + 1, end - overlap)
+    return passages
+
+
+def merge_transcript_results(results, categories):
+    """Passages of one transcript: the highest score per category, the union of the listed sentences."""
+    merged = {'probabilities': {key: max(r['probabilities'][key] for r in results) for key in categories},
+              'sentences': {}, 'model': results[0].get('model'), 'score_kind': results[0].get('score_kind'),
+              'usage': usage_totals(results)}
+    for result in results:
+        for key, ids in (result.get('sentences') or {}).items():
+            merged['sentences'][key] = sorted(set(merged['sentences'].get(key, [])) | set(ids))
+    return merged
+
+
 async def run_models(manifest, policy, configs, destination, *, keys=None, modality='multimodal', progress=lambda _: None,
-                     evaluator=evaluate, limiters=None, should_stop=None, stop_on_block=False, only_segments=None, previous=None):
+                     evaluator=evaluate, limiters=None, should_stop=None, stop_on_block=False, only_segments=None, previous=None,
+                     full_text=False, speech_context=False, transcript_evaluator=evaluate_transcript):
     """Judge every window with every provider, concurrently.
 
     Requests per provider are capped by ``limiters[provider]`` (shared across videos) when given,
@@ -226,6 +300,11 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
     from ``previous`` (an earlier report on the same inputs), e.g. to retry failed windows.
     ``stop_on_block`` skips windows not yet sent once any window is blocked (the verdict cannot change).
     ``should_stop`` is polled before each request; returning True raises ``Cancelled``.
+
+    ``full_text`` also judges the whole transcript once per provider (sent first, alongside the windows), so
+    meaning spread over several sentences is not lost by the window cut; the result is stored as the
+    provider's ``transcript`` entry and never stops the windows. ``speech_context`` gives each window the
+    sentence before and after it. Neither applies to the visual modality.
     """
     validate_policy(policy)
     if not configs or modality not in {'multimodal', 'visual', 'text'}:
@@ -260,6 +339,13 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
         report['retry_of'] = previous.get('report_path')
     segments = manifest['segments']
     total = len(segments)
+    spoken = modality != 'visual'
+    sentences = transcript_sentences(segments) if spoken else []
+    report['full_text'] = bool(full_text and spoken)
+    report['speech_context'] = bool(speech_context and spoken)
+    if report['full_text']:
+        report['transcript'] = sentences
+    contexts = speech_contexts(segments, sentences) if report['speech_context'] else {}
     rows = {config.provider: {} for config in configs}
     todo = {config.provider: [s for s in segments if only_segments is None
                               or s['segment_id'] in only_segments.get(config.provider, ())] for config in configs}
@@ -269,6 +355,17 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
             kept = {r['segment_id']: r for r in (previous or {}).get('providers', {}).get(config.provider, {}).get('segments', [])}
             redo = {s['segment_id'] for s in todo[config.provider]}
             rows[config.provider].update({sid: row for sid, row in kept.items() if sid not in redo})
+    whole = {}
+    text_todo = []
+    for config in configs:
+        if not report['full_text']:
+            continue
+        earlier = (previous or {}).get('providers', {}).get(config.provider, {}).get('transcript') if only_segments is not None else None
+        if earlier and earlier.get('status') in ('completed', 'skipped') and earlier.get('sentence_count') == len(sentences):
+            whole[config.provider] = earlier
+        else:
+            text_todo.append(config)
+    planned = {config.provider: len(todo[config.provider]) + (config in text_todo) for config in configs}
     blocked = [False]
     done = {config.provider: 0 for config in configs}
     local = {config.provider: asyncio.Semaphore(config.max_concurrency) for config in configs}
@@ -281,10 +378,57 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
     def write_report():
         for config in configs:
             ordered = [rows[config.provider][s['segment_id']] for s in segments if s['segment_id'] in rows[config.provider]]
-            report['providers'][config.provider] = {
-                'config': asdict(config), 'segments': ordered, 'usage': usage_totals(ordered),
-                'complete': len(ordered) == total and all(r['status'] in ('completed', 'skipped') for r in ordered)}
+            text = whole.get(config.provider)
+            entry = report['providers'][config.provider] = {
+                'config': asdict(config), 'segments': ordered, 'usage': usage_totals(ordered + ([text] if text else [])),
+                'complete': len(ordered) == total and all(r['status'] in ('completed', 'skipped') for r in ordered)
+                and (not report['full_text'] or (text or {}).get('status') in ('completed', 'skipped'))}
+            if report['full_text']:
+                entry['transcript'] = text
         write_json(run_dir / 'report.json', report)
+
+    def finished(provider):
+        done[provider] += 1
+        progress(f"{provider}: 完成 {done[provider]}/{planned[provider]}")
+        write_report()
+
+    def api_key(config):
+        return keys.get(config.provider) or os.environ[config.api_key_env]
+
+    async def judge_text(config, client):
+        row = {'sentence_count': len(sentences)}
+        started = time.perf_counter()
+        if not sentences:
+            row.update(status='skipped', action='allow', skip_reason='no_speech')
+        elif stop_on_block and blocked[0]:
+            row.update(status='skipped', action='allow', skip_reason='stopped_after_block')
+        else:
+            if should_stop and should_stop():
+                raise Cancelled()
+            extra = {'client': client} if client is not None else {}
+            passages = transcript_passages(sentences)
+
+            async def one(passage):
+                async with slot(config.provider):
+                    if should_stop and should_stop():
+                        raise Cancelled()
+                    return await transcript_evaluator(passage, policy, config, api_key(config), **extra)
+            try:
+                # A single passage is awaited in place so it takes a request slot before any window does.
+                calls = [one(p) for p in passages]
+                results = [await calls[0]] if len(calls) == 1 else await asyncio.gather(*calls)
+                merged = merge_transcript_results(results, policy['categories'])
+                listed = {i for ids in merged['sentences'].values() for i in ids}
+                row.update(merged, status='completed', action=decision(merged['probabilities'], policy),
+                           passages=len(passages),
+                           windows=sorted({sid for s in sentences if s['id'] in listed for sid in s['segments']}))
+            except Cancelled:
+                raise
+            except Exception as error:
+                row.update(status='failed', action='review', error_type=getattr(error, 'code', None) or type(error).__name__)
+        row['elapsed_sec'] = round(time.perf_counter() - started, 3)
+        whole[config.provider] = row
+        finished(config.provider)
 
     async def judge(config, segment, client):
         row = {k: segment[k] for k in ('segment_id', 'start_sec', 'end_sec', 'input_hash')}
@@ -306,13 +450,11 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
                 if stop_on_block and blocked[0]:
                     row.update(status='skipped', action='allow', skip_reason='stopped_after_block')
                     rows[config.provider][segment['segment_id']] = row
-                    done[config.provider] += 1
-                    progress(f"{config.provider}: 完成 {done[config.provider]}/{len(todo[config.provider])}")
-                    write_report()
+                    finished(config.provider)
                     return
                 try:
-                    result = await evaluator(segment, policy, config, keys.get(config.provider) or os.environ[config.api_key_env],
-                                             modality=modality, **extra)
+                    sent = dict(segment, speech_context=contexts[segment['segment_id']]) if segment['segment_id'] in contexts else segment
+                    result = await evaluator(sent, policy, config, api_key(config), modality=modality, **extra)
                     row.update(result, status='completed', action=decision(result['probabilities'], policy))
                     if row['action'] == 'block':
                         blocked[0] = True
@@ -325,20 +467,20 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
                     row.update(status='failed', action='review', error_type=getattr(error, 'code', None) or type(error).__name__)
         row['elapsed_sec'] = round(time.perf_counter() - started, 3)
         rows[config.provider][segment['segment_id']] = row
-        done[config.provider] += 1
-        progress(f"{config.provider}: 完成 {done[config.provider]}/{len(todo[config.provider])}")
-        write_report()
+        finished(config.provider)
 
     async with AsyncExitStack() as stack:
         clients = {}
-        if evaluator is evaluate:
+        if evaluator is evaluate or (text_todo and transcript_evaluator is evaluate_transcript):
             for config in configs:
                 limit = limiters[config.provider].limit if limiters and config.provider in limiters else config.max_concurrency
                 clients[config.provider] = await stack.enter_async_context(httpx.AsyncClient(
                     timeout=config.timeout_sec, limits=httpx.Limits(max_connections=limit, max_keepalive_connections=limit)))
         for config in configs:
-            progress(f"{config.provider}: 完成 0/{len(todo[config.provider])}")
-        await asyncio.gather(*(judge(config, segment, clients.get(config.provider))
+            progress(f"{config.provider}: 完成 0/{planned[config.provider]}")
+        # The full-text requests go first so they are not queued behind every window.
+        await asyncio.gather(*(judge_text(config, clients.get(config.provider)) for config in text_todo),
+                             *(judge(config, segment, clients.get(config.provider))
                                for config in configs for segment in todo[config.provider]))
     write_report()
     lines = ['# 短视频审核对照报告', '', f"输入指纹：`{claimed}`", '',
@@ -349,6 +491,12 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
         lines[4:4] = [f"云端语音识别：{stats['uploaded']} 段上传（{stats['uploaded_seconds']} 秒），"
                       f"跳过静音 {stats['skipped_silent']} 段，失败 {stats['failed']} 段。", '']
     for provider, data in report['providers'].items():
+        text = data.get('transcript')
+        if text:
+            flagged = '、'.join(f"{key}: {ids}" for key, ids in (text.get('sentences') or {}).items()) or '无'
+            lines.insert(4, f"全文判断（{provider}）：{text['status']} / {text['action']}，"
+                            f"分数 {json.dumps(text.get('probabilities', {}), ensure_ascii=False)}，违规语句 {flagged}。")
+            lines.insert(5, '')
         for row in data['segments']:
             lines.append(f"| {provider} | {row['segment_id']} | {row['start_sec']:.2f}–{row['end_sec']:.2f} | {row['status']} | {row['action']} | {json.dumps(row.get('probabilities', {}), ensure_ascii=False)} |")
     (run_dir / 'report.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
@@ -370,6 +518,8 @@ def main():
     run.add_argument('--config', default=str(files('short_video_moderation').joinpath('defaults/moderation.json')))
     run.add_argument('--provider', choices=['jev', 'openai', 'both'], default='both')
     run.add_argument('--modality', choices=['multimodal', 'visual', 'text'], default='multimodal')
+    run.add_argument('--no-full-text', action='store_true', help='skip the whole-transcript judgement')
+    run.add_argument('--no-speech-context', action='store_true', help='do not give windows the neighbouring sentences')
     args = parser.parse_args()
     if args.command == 'prepare':
         asr = TranscriptionConfig.from_file(args.asr_config) if args.asr_config else None
@@ -380,7 +530,9 @@ def main():
         configs = [ProviderConfig(**c) for c in settings['providers'] if args.provider in ('both', c['provider'])]
         if not configs:
             raise ValueError('Selected provider not configured')
-        report = asyncio.run(run_models(manifest, settings['policy'], configs, Path(args.inputs).parent, modality=args.modality, progress=print))
+        report = asyncio.run(run_models(manifest, settings['policy'], configs, Path(args.inputs).parent, modality=args.modality,
+                                        progress=print, full_text=not args.no_full_text,
+                                        speech_context=not args.no_speech_context))
         print(report['report_path'])
         if any(not p['complete'] for p in report['providers'].values()):
             return 1

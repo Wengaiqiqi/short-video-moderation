@@ -50,10 +50,32 @@ def default_settings():
                 # requests per model group in flight across all of them.
                 video_concurrency=11,
                 skip_reviewed=True, stop_on_block=False, remember_keys=False, split_long_videos=True,
+                # Judge the whole transcript once per model group, and give windows the neighbouring sentences.
+                full_text=True, speech_context=True,
                 policy=defaults['policy'], ffmpeg_path='', ffprobe_path='')
 
 
+OLD_DEFAULT_THRESHOLDS = (0.4, 0.8)
+
+
+def migrate_policy(policy):
+    """Policies saved with the old default 待定 threshold (0.4) move to the current default.
+
+    Only untouched policies are changed: not calibrated and still exactly 0.4 / 0.8 globally.
+    """
+    if not isinstance(policy, dict) or policy.get('calibrated_at'):
+        return policy
+    if (policy.get('review_threshold'), policy.get('block_threshold')) != OLD_DEFAULT_THRESHOLDS:
+        return policy
+    return dict(policy, review_threshold=load_defaults()['policy']['review_threshold'])
+
+
 RETIRED_SETTINGS = ('asr_concurrency', 'model_concurrency', 'jev_price_per_mtok', 'llm_price_per_mtok', 'asr_price_per_min')
+
+
+def semantics(settings):
+    """Whole-transcript judgement and neighbouring-sentence context (both on unless switched off)."""
+    return {'full_text': settings.get('full_text') is not False, 'speech_context': settings.get('speech_context') is not False}
 
 
 def concurrency(settings):
@@ -64,6 +86,7 @@ def concurrency(settings):
 def initial_settings():
     """Defaults, overlaid with the settings saved last time (never keys), plus keychain status."""
     settings = {k: v for k, v in {**default_settings(), **load_saved_settings()}.items() if k not in RETIRED_SETTINGS}
+    settings['policy'] = migrate_policy(settings.get('policy'))
     try:
         validate_policy(settings['policy'])
     except (KeyError, TypeError, ValueError):
@@ -220,7 +243,7 @@ def start_moderation(payload, emit):
                 policy=fingerprint(ctx['policy']), modality=ctx['modality'], sampling=sampling.__dict__,
                 providers=[(p.provider, p.base_url, p.model) for p in ctx['providers']],
                 asr=[settings.get('asr_engine'), settings.get('mimo_model') if settings.get('asr_engine') == 'mimo-cloud'
-                     else settings.get('asr_model')])
+                     else settings.get('asr_model')], **semantics(settings))
             earlier = find_reviewed(Path(output).resolve(), video_fp, signature)
             if earlier is not None:
                 send('moderation.completed', message=earlier['report_path'], report=earlier, cached=True)
@@ -235,7 +258,8 @@ def start_moderation(payload, emit):
         )
         report = asyncio.run(run_models(manifest, ctx['policy'], ctx['providers'], destination, keys=ctx['keys'],
                                         modality=ctx['modality'], progress=progress, limiters=MODEL_REQUESTS,
-                                        should_stop=stopped, stop_on_block=bool(settings.get('stop_on_block'))))
+                                        should_stop=stopped, stop_on_block=bool(settings.get('stop_on_block')),
+                                        **semantics(settings)))
         if video_fp and all(p['complete'] for p in report['providers'].values()):
             remember_reviewed(Path(output).resolve(), video_fp, signature, report['report_path'])
         send('moderation.completed', message=report['report_path'], report=report)
@@ -264,15 +288,19 @@ def start_evaluation(payload, emit):
             ctx = _context(dict(payload, modality=previous.get('modality', 'multimodal')), choice)
             only = {p: {r['segment_id'] for r in previous['providers'][p]['segments'] if r.get('status') == 'failed'}
                     for p in present}
+            # Same settings as the report being retried; a failed full-text judgement is sent again too.
             report = asyncio.run(run_models(manifest, previous['policy'], ctx['providers'], job, keys=ctx['keys'],
                                             modality=ctx['modality'], progress=progress, limiters=MODEL_REQUESTS,
-                                            should_stop=stopped, only_segments=only, previous=previous))
+                                            should_stop=stopped, only_segments=only, previous=previous,
+                                            full_text=bool(previous.get('full_text')),
+                                            speech_context=bool(previous.get('speech_context'))))
         else:
             ctx = _context(payload)
             report = asyncio.run(run_models(manifest, ctx['policy'], ctx['providers'], job, keys=ctx['keys'],
                                             modality=ctx['modality'], progress=progress, limiters=MODEL_REQUESTS,
                                             should_stop=stopped,
-                                            stop_on_block=bool(ctx['settings'].get('stop_on_block'))))
+                                            stop_on_block=bool(ctx['settings'].get('stop_on_block')),
+                                            **semantics(ctx['settings'])))
         send('moderation.completed', message=report['report_path'], report=report)
 
     return _run_job(payload, emit, work)

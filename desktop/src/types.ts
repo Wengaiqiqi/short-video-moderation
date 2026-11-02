@@ -10,6 +10,8 @@ export interface Settings {
   ffmpeg_path: string; ffprobe_path: string;
   /** Reuse an identical earlier review; stop sending windows once one is blocked; split videos over 10 min. */
   skip_reviewed?: boolean; stop_on_block?: boolean; split_long_videos?: boolean;
+  /** Judge the whole transcript once per model group; give each window the sentence before and after it. */
+  full_text?: boolean; speech_context?: boolean;
   /** Save typed keys in the system keychain (backend only reports which keys are stored). */
   remember_keys?: boolean; keychain_available?: boolean; stored_keys?: Record<string, boolean>;
   policy?: ModerationPolicy; category_presets?: Record<string, CategoryRule>;
@@ -27,14 +29,32 @@ export interface ModerationRow {
   evidence?: string;
   elapsed_sec?: number; visual_evidence?: string; score_kind?: string;
 }
+/** One sentence of the whole transcript, numbered from 1; ``segments`` are the windows it overlaps. */
+export interface TranscriptSentence { id: number; start_sec: number; end_sec: number; text: string; segments: number[] }
+/** The whole-transcript judgement of one model group. */
+export interface TranscriptJudgement {
+  /** completed | failed | skipped (no speech, or stopped after a block) */
+  status: string; action: string; probabilities?: Record<string, number>;
+  /** Sentence ids behind each category (the baseline names them; JEV gives scores only). */
+  sentences?: Record<string, number[]>;
+  /** Windows that contain the listed sentences. */
+  windows?: number[];
+  sentence_count?: number; passages?: number; elapsed_sec?: number;
+  error_type?: string; skip_reason?: string; model?: string; usage?: Record<string, number>;
+}
 export interface ModerationPolicy {
   version?: string;
+  /** Set when thresholds were applied from the calibration dialog; cleared by manual edits. */
+  calibrated_at?: string;
   review_threshold: number; block_threshold: number;
   categories: Record<string, CategoryRule>;
 }
 export interface ModerationReport {
   report_path: string;
-  providers: Record<string, { complete: boolean; segments: ModerationRow[]; usage?: Record<string, number>; config?: { model?: string; base_url?: string } }>;
+  providers: Record<string, { complete: boolean; segments: ModerationRow[]; usage?: Record<string, number>;
+    config?: { model?: string; base_url?: string }; transcript?: TranscriptJudgement | null }>;
+  /** Whole-transcript judgement and neighbouring-sentence context were on for this run. */
+  full_text?: boolean; speech_context?: boolean; transcript?: TranscriptSentence[];
   video_path?: string; duration_sec?: number; created_at?: string; retry_of?: string;
   asr_statistics?: { chunks: number; uploaded: number; uploaded_seconds: number; skipped_silent: number; failed: number };
   frame_statistics?: { sampled: number; kept: number };
