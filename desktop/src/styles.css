@@ -400,8 +400,8 @@ tbody tr:focus-visible { outline: 2px solid rgba(79, 182, 255, .7); outline-offs
 .detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .detail-head b { font: 600 11.5px var(--mono); letter-spacing: .1em; }
 .detail-head .meta { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.score { display: grid; grid-template-columns: 34px minmax(0, 1fr) 44px; align-items: center; gap: 8px; height: 21px; }
-.score-name { font-size: 12px; color: var(--text-2); }
+.score { display: grid; grid-template-columns: 50px minmax(0, 1fr) 44px; align-items: center; gap: 8px; height: 21px; }
+.score-name { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .score-bar { position: relative; height: 6px; border-radius: 999px; background: var(--surface); }
 .score-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; }
 .score-bar i.v-allow { background: rgba(53, 200, 154, .75); }
@@ -486,6 +486,9 @@ tbody tr.split td:first-child { box-shadow: inset 3px 0 0 var(--review); }
 .modal-head b { color: var(--text); font: 600 14px var(--sans); letter-spacing: .06em; }
 .modal-head .head-tools { margin-left: auto; }
 .modal-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; padding: 0 18px 18px; min-height: 0; overflow: auto; }
+.video-modal { width: min(1100px, 100%); }
+.video-body { padding: 0 18px 18px; min-height: 0; }
+.full-video { display: block; width: 100%; max-height: calc(100vh - 140px); border-radius: 12px; background: #000; }
 .stage-view { min-width: 0; }
 .stage-view .big { display: block; width: 100%; max-height: 56vh; object-fit: contain; border-radius: 12px; background: #000; }
 .stage-view .placeholder { display: grid; place-items: center; height: 300px; color: var(--muted); }
@@ -513,9 +516,11 @@ tbody tr.split td:first-child { box-shadow: inset 3px 0 0 var(--review); }
 .rule-head .switch-field { flex: 1; min-width: 0; color: var(--text); }
 .rule-head b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rule-thr { display: flex; gap: 4px; }
-.rule-thr input { width: 50px; height: 26px; padding: 0 6px; border-radius: 6px; background: var(--surface); text-align: center; font: 11.5px var(--mono); color: var(--text); }
-.rule-thr input:focus { outline: none; box-shadow: 0 0 0 2px rgba(79, 182, 255, .45); }
-.rule-thr input::placeholder { color: var(--faint); }
+.rule-thr input { width: 52px; height: 26px; padding: 0 4px; border-radius: 6px; background: var(--surface); text-align: center; font: 11.5px var(--mono);
+  color: var(--review); box-shadow: inset 0 0 0 1px rgba(245, 165, 36, .55); -moz-appearance: textfield; appearance: textfield; }
+.rule-thr input::-webkit-inner-spin-button, .rule-thr input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.rule-thr input:focus { outline: none; box-shadow: inset 0 0 0 1px rgba(245, 165, 36, .55), 0 0 0 2px rgba(79, 182, 255, .45); }
+.rule-thr input::placeholder { color: var(--review); opacity: 1; }
 .rule-body { padding: 4px 2px 2px; }
 .field textarea { display: block; width: 100%; margin-top: 5px; padding: 7px 11px; border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: 12px var(--sans); resize: vertical; border: 0; }
 .field textarea:focus { outline: none; box-shadow: 0 0 0 2px rgba(79, 182, 255, .45); }

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { VERDICTS, categoriesOf, categoryLabel, errorText, fmtTime, isFailed, isSkipped, pad2, providerLabel, thresholds,
          type SegmentView } from "../lib/report";
 import { VerdictTag } from "./Results";
@@ -61,7 +63,7 @@ export function Scores({ video, segment, providers }: { video: VideoItem; segmen
           const limits = thresholds(report, category);
           const tone = value >= limits.block ? "block" : value >= limits.review ? "review" : "allow";
           return <div key={category} className="score">
-            <span className="score-name">{categoryLabel(category, report)}</span>
+            <span className="score-name" title={categoryLabel(category, report)}>{categoryLabel(category, report)}</span>
             <span className="score-bar"><i className={`v-${tone}`} style={{ width: `${value * 100}%` }} />
               <em style={{ left: `${limits.review * 100}%` }} /><em className="hi" style={{ left: `${limits.block * 100}%` }} /></span>
             <span className={`score-value t-${tone}`}>{value.toFixed(3)}</span>
@@ -89,6 +91,28 @@ export function EvidenceStrip({ evidence, onOpen, onPlay, clip }: {
       {clip.error && <span className="hint warn">{clip.error}</span>}
     </div>
   </div>;
+}
+
+/** The whole video in a window, streamed from disk (a split part plays its own part file); Esc closes. */
+export function VideoModal({ video, onClose }: { video: VideoItem; onClose: () => void }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  return createPortal(<div className="modal-backdrop" onClick={onClose}>
+    <div className="modal video-modal" role="dialog" aria-modal="true" aria-label={`${video.name} 原视频`} onClick={e => e.stopPropagation()}>
+      <header className="modal-head">
+        <b>原视频</b><span className="meta" title={video.path}>{video.name}</span>
+        <span className="head-tools"><button type="button" className="icon-button" aria-label="关闭" onClick={onClose}>×</button></span>
+      </header>
+      <div className="video-body">
+        {failed ? <p className="notice v-failed">此视频格式无法在应用内播放（支持 MP4 / H.264、WebM）</p>
+          : <video className="full-video" src={convertFileSrc(video.path)} controls autoPlay onError={() => setFailed(true)} />}
+      </div>
+    </div>
+  </div>, document.body);
 }
 
 /** Full-size evidence of one window with its scores; ← → move between windows, Esc closes. */

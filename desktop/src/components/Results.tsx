@@ -174,7 +174,7 @@ function VideoSegments({ video, onVideo, segment, onSegment, filter, onFilter, p
                 <td className="num">{fmtTime(s.start + offset)}–{fmtTime(s.end + offset)}</td>
                 {providers.map(p => <td key={p}><VerdictTag row={s.rows[p]} /></td>)}
                 <td className={`num ${peak >= limits.block ? "t-block" : peak >= limits.review ? "t-review" : ""}`}>{peak.toFixed(3)}</td>
-                <td>{topCategory(main && !isFailed(main) ? main : s.rows[providers[1]], report)}</td>
+                <td>{s.verdict === "allow" ? "—" : topCategory(main && !isFailed(main) ? main : s.rows[providers[1]], report)}</td>
               </tr>;
             })}</tbody>
           </table>

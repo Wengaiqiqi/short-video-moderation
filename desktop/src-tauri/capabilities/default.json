@@ -9,6 +9,6 @@
     "core:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    "opener:allow-open-path"
+    { "identifier": "opener:allow-open-path", "allow": [{ "path": "**" }] }
   ]
 }

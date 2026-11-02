@@ -43,9 +43,11 @@ export default function RulesEditor({ settings, onChange }: { settings: Settings
                 <span className="toggle" aria-hidden="true" /><b>{rule.label ?? id}</b></label>
               <span className="rule-thr">
                 <input type="number" min={0} max={1} step={0.05} aria-label={`${rule.label ?? id} 复核阈值`} placeholder={String(policy.review_threshold)}
-                  value={rule.review_threshold ?? ""} onChange={e => e.target.value === "" ? clearOverride(id, "review_threshold") : setRule(id, { review_threshold: round(Number(e.target.value)) })} />
+                  title={rule.review_threshold != null ? "本类单独阈值，清空恢复全局" : undefined}
+                  onWheel={e => e.currentTarget.blur()} value={rule.review_threshold ?? ""} onChange={e => e.target.value === "" ? clearOverride(id, "review_threshold") : setRule(id, { review_threshold: round(Number(e.target.value)) })} />
                 <input type="number" min={0} max={1} step={0.05} aria-label={`${rule.label ?? id} 拦截阈值`} placeholder={String(policy.block_threshold)}
-                  value={rule.block_threshold ?? ""} onChange={e => e.target.value === "" ? clearOverride(id, "block_threshold") : setRule(id, { block_threshold: round(Number(e.target.value)) })} />
+                  title={rule.block_threshold != null ? "本类单独阈值，清空恢复全局" : undefined}
+                  onWheel={e => e.currentTarget.blur()} value={rule.block_threshold ?? ""} onChange={e => e.target.value === "" ? clearOverride(id, "block_threshold") : setRule(id, { block_threshold: round(Number(e.target.value)) })} />
               </span>
               <button type="button" className="icon-button" aria-expanded={open === id} title="编辑判定标准" onClick={() => setOpen(open === id ? null : id)}>✎</button>
             </div>

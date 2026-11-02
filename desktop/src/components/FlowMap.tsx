@@ -195,6 +195,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
         {classifying > 0 && <>
           <Comet d={geometry.paths.mergeTop} tone="data" duration={1300} loop width={0.8} />
           <Comet d={geometry.paths.mergeBot} tone="data" duration={1300} delay={650} loop width={0.8} />
+          {VERDICTS.map((v, i) => <Comet key={v.id} d={geometry.paths.out[v.id]} tone={v.id} duration={1600} delay={1300 + i * 400} loop width={0.8} />)}
         </>}
         {/* Burst: a video enters classification — both lines pour into 分类判断 */}
         {Object.entries(entering).map(([id, at]) => <g key={`enter-${id}-${at}`}>

@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import { VERDICT_ZH, addCosts, costOf, fmtTime, fmtTokens, pad2, providerLabel, providersOf, tally, thresholds,
          type SegmentView } from "../lib/report";
-import { EvidenceStrip, Scores, useClip, useEvidence, type Request } from "./Evidence";
+import { EvidenceStrip, Scores, VideoModal, useClip, useEvidence, type Request } from "./Evidence";
 import { VideoTag } from "./Results";
 import type { Settings, VideoItem } from "../types";
 
@@ -20,6 +21,8 @@ export default function Detail({ video, videos, providers, segment, cloudAsr, se
   const { clip, load } = useClip(video, segment, request);
   const report = video?.report ?? null;
   const limits = thresholds(report);
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => { setPlaying(false); }, [video?.id]);
 
   if (segment && video) return <section className="panel dock-panel">
     <header className="panel-head"><span><b>片段 {pad2(segment.id)}</b></span>
@@ -42,11 +45,15 @@ export default function Detail({ video, videos, providers, segment, cloudAsr, se
           <div><dt>模型</dt><dd>{video.verdict ? VERDICT_ZH[video.verdict] : "—"}</dd></div>
           <div><dt>人工</dt><dd>{video.review ? `${VERDICT_ZH[video.review.decision]}${video.review.note ? ` · ${video.review.note}` : ""}` : "—"}</dd></div>
           {Object.entries(counts).map(([p, c]) => <div key={p}><dt>{providerLabel(p)}</dt>
-            <dd>通过 {c.allow} · <span className="t-block">拦截 {c.block}</span> · <span className="t-review">待定 {c.review}</span>{c.failed ? <span className="t-failed"> · 失败 {c.failed}</span> : null}</dd></div>)}
+            <dd><span className="t-allow">通过 {c.allow}</span> ·<span className="t-block">拦截 {c.block}</span> · <span className="t-review">待定 {c.review}</span>{c.failed ? <span className="t-failed"> · 失败 {c.failed}</span> : null}</dd></div>)}
           <div><dt>模态</dt><dd>{report?.modality ? MODALITY[report.modality] ?? report.modality : "—"}</dd></div>
           <div><dt>用量</dt><dd><CostLine cost={costOf(report)} /></dd></div>
           {report?.frame_statistics && <div><dt>抽帧</dt><dd>{report.frame_statistics.kept}/{report.frame_statistics.sampled}（去重后）</dd></div>}
         </dl>
+        <div className="strip-actions">
+          <button type="button" className="tool" title={video.path} onClick={() => setPlaying(true)}>▶ 播放原视频</button>
+        </div>
+        {playing && <VideoModal video={video} onClose={() => setPlaying(false)} />}
         {video.error && <p className="notice v-failed">{video.error}</p>}
       </div>
     </section>;
