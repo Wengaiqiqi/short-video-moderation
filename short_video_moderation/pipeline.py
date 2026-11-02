@@ -465,6 +465,8 @@ async def run_models(manifest, policy, configs, destination, *, keys=None, modal
                             row['action'] = 'review'
                 except Exception as error:
                     row.update(status='failed', action='review', error_type=getattr(error, 'code', None) or type(error).__name__)
+                    if getattr(error, 'context_split', None):
+                        row['context_split'] = error.context_split
         row['elapsed_sec'] = round(time.perf_counter() - started, 3)
         rows[config.provider][segment['segment_id']] = row
         finished(config.provider)

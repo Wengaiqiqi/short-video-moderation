@@ -201,9 +201,54 @@ def normalize_response(raw: dict, config: ProviderConfig, categories, sentence_i
 
 
 async def evaluate(segment, policy, config, api_key, *, modality='multimodal', transport=None, client=None):
-    url, headers, payload = build_request(segment, policy, config, modality)
-    normalize = lambda raw: normalize_response(raw, config, policy['categories'])
-    return await _send(url, headers, payload, config, api_key, normalize, transport, client)
+    # Child requests run sequentially inside the caller's existing concurrency slot.
+    # Keep the entire speech/window context in each child; partition images only.
+    batches, rejections = [], []
+
+    async def judge(frames, shared):
+        evidence = {**segment, 'frames': frames}
+        url, headers, payload = build_request(evidence, policy, config, modality)
+        normalize = lambda raw: normalize_response(raw, config, policy['categories'])
+        try:
+            result = await _send(url, headers, payload, config, api_key, normalize, transport, shared)
+        except ModelRequestError as error:
+            if error.code != 'max_tokens_exceeded' or modality == 'text':
+                raise
+            rejections.append({'frame_count': len(frames), 'frame_times': [f['time_sec'] for f in frames]})
+            if len(frames) <= 1:
+                raise
+            middle = len(frames) // 2
+            await judge(frames[:middle], shared)
+            await judge(frames[middle:], shared)
+            return
+        batches.append({'frame_times': [f['time_sec'] for f in frames], 'result': result})
+
+    def trace():
+        return {'reason': 'max_tokens_exceeded', 'aggregation': 'category_max',
+                'original_frame_count': len(segment['frames']), 'rejected_batches': rejections,
+                'successful_batches': batches}
+
+    try:
+        if client is None:
+            async with httpx.AsyncClient(timeout=config.timeout_sec, transport=transport) as shared:
+                await judge(segment['frames'], shared)
+        else:
+            await judge(segment['frames'], client)
+    except ModelRequestError as error:
+        if rejections:
+            error.context_split = trace()
+        raise
+    if not rejections:
+        return batches[0]['result']
+    results = [batch['result'] for batch in batches]
+    usage = {}
+    for result in results:
+        for key, value in result.get('usage', {}).items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                usage[key] = usage.get(key, 0) + value
+    return {**results[0], 'probabilities': {
+        key: max(result['probabilities'][key] for result in results) for key in policy['categories']},
+        'usage': usage, 'context_split': trace()}
 
 
 async def evaluate_transcript(sentences, policy, config, api_key, *, transport=None, client=None):
@@ -244,6 +289,14 @@ async def _post(client, url, headers, payload, config, normalize):
                 continue
         if response.is_error:
             # Server bodies can echo submitted content or credentials.
+            # Inspect only known machine error fields; never persist response text.
+            if config.provider == 'jev' and response.status_code == 400:
+                try:
+                    body = response.json()
+                except ValueError:
+                    body = None
+                if _context_limit_error(body):
+                    raise ModelRequestError('max_tokens_exceeded')
             raise ModelRequestError(f'http_{response.status_code}')
         try:
             raw = response.json()
@@ -251,3 +304,11 @@ async def _post(client, url, headers, payload, config, normalize):
             raise ModelRequestError('invalid_json') from None
         return normalize(raw)
     raise ModelRequestError('retries_exhausted')
+
+
+def _context_limit_error(body):
+    if not isinstance(body, dict):
+        return False
+    if any(body.get(key) == 'max_tokens_exceeded' for key in ('error_type', 'code', 'error_code')):
+        return True
+    return any(_context_limit_error(body.get(key)) for key in ('detail', 'error'))
