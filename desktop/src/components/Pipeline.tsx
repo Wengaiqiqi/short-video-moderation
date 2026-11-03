@@ -2,7 +2,7 @@ import { STAGE_ORDER } from "../useModeration";
 import type { Stage, StageId } from "../types";
 
 const NAMES: Record<StageId, string> = {
-  engine: "引擎连接", prepare: "抽帧 ∥ 语音转写", align: "窗口对齐", jev: "JEV 逐段判断", openai: "对照组逐段判断", report: "生成报告",
+  engine: "引擎连接", prepare: "抽帧 ∥ 语音转写", align: "窗口对齐", jev: "JEV 逐段判断", openai: "对照组逐段判断",
 };
 const STATE: Record<Stage["state"], string> = { wait: "等待", run: "进行中", pass: "完成", warn: "有失败", fail: "失败", skip: "跳过" };
 

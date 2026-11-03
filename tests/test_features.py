@@ -222,6 +222,21 @@ class LibraryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             library.save_review(self.root / 'elsewhere' / 'report.json', 'allow')
 
+    def test_deleting_results_removes_the_folder_and_its_index_entries(self):
+        job, _ = make_job(self.root)
+        (job / 'evaluation-1').mkdir()
+        report = job / 'evaluation-1' / 'report.json'
+        report.write_text(json.dumps({'providers': {}}), encoding='utf-8')
+        library.remember_reviewed(self.root, 'fp', 'sig', report)
+        library.remember_reviewed(self.root, 'other', 'sig', self.root / 'moderation-x' / 'evaluation-1' / 'report.json')
+        outside = Path(self.temp.name) / 'elsewhere' / 'moderation-y' / 'evaluation-1' / 'report.json'
+        with self.assertRaises(ValueError):
+            library.delete_results([outside], self.root)
+        self.assertEqual(library.delete_results([report.as_posix()], self.root), {'deleted': [report.as_posix()], 'failed': []})
+        self.assertFalse(job.exists())
+        self.assertEqual(list(library.read_json(self.root / 'index.json')), ['other'])
+        self.assertEqual(library.list_history(self.root), [])
+
     def test_settings_are_saved_without_keys_and_csv_opens_in_excel(self):
         with patch.dict(os.environ, {'SVM_RUNTIME_ROOT': str(self.root)}):
             old_policy = dict(desktop.load_defaults()['policy'], review_threshold=0.4)

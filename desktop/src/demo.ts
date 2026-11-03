@@ -254,6 +254,8 @@ export function demoRequest(action: string, payload: Record<string, unknown>): P
       });
       return reply({ entries }, 300);
     }
+    case "delete_results":
+      return reply({ deleted: payload.report_paths, failed: [] }, 150);
     case "save_settings":
       try { localStorage.setItem("svm-demo-settings", JSON.stringify(payload.settings)); } catch { /* preview only */ }
       return reply({ stored_keys: {} }, 50);

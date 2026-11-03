@@ -5,6 +5,7 @@ import csv
 import hashlib
 import json
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -91,6 +92,46 @@ def list_history(output_root, limit=300):
         if len(entries) >= limit:
             break
     return entries
+
+
+def delete_results(report_paths, output_root):
+    """Delete the moderation-* folders of these reports (frames, transcripts, reports, review) and their index entries.
+
+    Only folders inside the results folder are touched. Returns the deleted report paths and the ones that failed.
+    """
+    root = Path(str(output_root or '')).expanduser().resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f'结果目录不存在：{root}')
+    jobs = {}
+    for path in report_paths or []:
+        job = job_dir(path)
+        if job.parent != root:
+            raise ValueError('只能删除结果目录中的审核结果')
+        jobs.setdefault(job, []).append(str(path))
+    deleted, failed = [], []
+    for job, paths in jobs.items():
+        try:
+            shutil.rmtree(job)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            failed += paths
+            continue
+        deleted += paths
+    gone = [job for job in jobs if not job.exists()]
+    if gone:
+        with _index_lock:
+            try:
+                index = read_json(_index_path(root))
+            except (OSError, ValueError):
+                index = None
+            if index is not None:
+                def kept(entry):
+                    report = Path(entry.get('report_path', '')).resolve()
+                    return not any(job in report.parents for job in gone)
+                index = {fp: [e for e in entries if kept(e)] for fp, entries in index.items()}
+                write_json_atomic(_index_path(root), {fp: entries for fp, entries in index.items() if entries})
+    return {'deleted': deleted, 'failed': failed}
 
 
 # ── Reviewed-video index: skip videos already reviewed with the same configuration ──

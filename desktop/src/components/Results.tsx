@@ -77,6 +77,8 @@ interface Props {
   onCancel: (id: string) => void; onRequeue: (id: string) => void;
   /** Show the report in the file manager; resolves to an error message, if any. */
   onReveal: (reportPath: string) => Promise<string | undefined>;
+  /** Delete finished videos and their result folders; resolves to an error message, if any. */
+  onDelete: (ids: string[]) => Promise<string | undefined>;
 }
 
 /** Finished videos (filtered by bin); opening one shows its per-window verdicts. */
@@ -89,9 +91,28 @@ export function listedVideos(videos: VideoItem[], scope: Props["scope"], bin: Ve
   return { finished, rows: bin ? finished.filter(v => finalVerdict(v) === bin) : finished };
 }
 
-function VideoList({ videos, onVideo, bin, onBin, scope, onScope, onExport, onRefreshHistory, onThumbs }: Props) {
+function VideoList({ videos, onVideo, bin, onBin, scope, onScope, onExport, onRefreshHistory, onThumbs, onDelete }: Props) {
   const { finished, rows } = listedVideos(videos, scope, bin);
   const historyCount = videos.filter(v => v.history).length;
+  // Selection mode: rows toggle instead of opening; deleting asks once more before touching the disk.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+  const picked = rows.filter(v => selected.has(v.id));
+  const allPicked = rows.length > 0 && picked.length === rows.length;
+  const stopSelecting = () => { setSelecting(false); setSelected(new Set()); setConfirming(false); setError(""); };
+  useEffect(stopSelecting, [scope]);
+  useEffect(() => setConfirming(false), [selected, bin]);
+  const toggle = (id: string) => setSelected(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const open = (id: string) => (selecting ? toggle(id) : onVideo(id));
+  async function remove() {
+    setDeleting(true); setError("");
+    const message = await onDelete(picked.map(v => v.id));
+    setDeleting(false);
+    if (message) { setError(message); setConfirming(false); } else stopSelecting();
+  }
   // Covers are fetched on demand for the rows being listed, newest first.
   const missing = rows.filter(v => !v.thumb);
   const missingKey = missing.map(v => v.id).join();
@@ -105,6 +126,8 @@ function VideoList({ videos, onVideo, bin, onBin, scope, onScope, onExport, onRe
         </span>
         {scope === "history" && <button type="button" className="link-button" onClick={onRefreshHistory} title="重新读取结果目录">刷新</button>}
         <button type="button" className="link-button" disabled={!rows.length} onClick={() => onExport(rows)} title="导出当前列表为 CSV">导出</button>
+        <button type="button" className="link-button" disabled={!selecting && !rows.length} aria-pressed={selecting}
+          onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>{selecting ? "完成" : "选择"}</button>
       </span>
     </header>
     <div className="toolbar">
@@ -113,18 +136,30 @@ function VideoList({ videos, onVideo, bin, onBin, scope, onScope, onExport, onRe
         {VERDICTS.map(v => <button key={v.id} type="button" className={`c-${v.id}${bin === v.id ? " on" : ""}`} aria-pressed={bin === v.id}
           onClick={() => onBin(bin === v.id ? null : v.id)}>{v.zh} {finished.filter(x => finalVerdict(x) === v.id).length}</button>)}
       </span>
+      {selecting && <span className="select-bar">
+        <span className="meta">已选 {picked.length}</span>
+        {confirming ? <>
+          <span className="select-warn">删除 {picked.length} 个结果及其文件，不可撤销</span>
+          <button type="button" className="tool danger" disabled={deleting} onClick={() => void remove()}>{deleting ? "删除中…" : "确认删除"}</button>
+          <button type="button" className="tool" disabled={deleting} onClick={() => setConfirming(false)}>取消</button>
+        </> : <button type="button" className="tool danger" disabled={!picked.length} onClick={() => setConfirming(true)}>删除</button>}
+      </span>}
     </div>
+    {error && <p className="form-error" role="alert">{error}</p>}
     {rows.length === 0 ? <p className="empty">{finished.length ? "此类暂无视频" : scope === "history" ? "结果目录中没有历史结果" : "暂无结果"}</p> :
       <div className="table-scroll">
         <table>
-          <thead><tr><th>视频</th><th>结论</th><th>片段</th><th>拦截段</th><th>待定段</th><th>分歧</th><th>{scope === "history" ? "日期" : "用时"}</th></tr></thead>
+          <thead><tr>{selecting && <th className="pick"><input type="checkbox" aria-label="全选" checked={allPicked}
+            onChange={() => setSelected(allPicked ? new Set() : new Set(rows.map(v => v.id)))} /></th>}<th>视频</th><th>结论</th><th>片段</th><th>拦截段</th><th>待定段</th><th>分歧</th><th>{scope === "history" ? "日期" : "用时"}</th></tr></thead>
           <tbody>{[...rows].reverse().map(v => {
             const counts = tally(v.report, providersOf(v.report));
             const sum = (k: "block" | "review") => Object.values(counts).reduce((a, c) => a + c[k], 0);
             const segments = Math.max(0, ...Object.values(v.report?.providers ?? {}).map(p => p.segments.length));
             const split = disagreements(v.report).size;
-            return <tr key={v.id} tabIndex={0} onClick={() => onVideo(v.id)}
-              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onVideo(v.id); } }}>
+            return <tr key={v.id} tabIndex={0} className={selected.has(v.id) ? "on" : undefined} onClick={() => open(v.id)}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(v.id); } }}>
+              {selecting && <td className="pick"><input type="checkbox" aria-label={`选择 ${v.name}`} checked={selected.has(v.id)}
+                onClick={e => e.stopPropagation()} onChange={() => toggle(v.id)} /></td>}
               <td className="video-cell"><span className="q-thumb">{v.thumb ? <img src={v.thumb} alt="" /> : null}</span>
                 <span className="v-name" title={v.path}>{v.name}</span>{v.cached && <span className="mini-tag" title="复用此前相同配置的结果">复用</span>}</td>
               <td><VideoTag video={v} /></td>

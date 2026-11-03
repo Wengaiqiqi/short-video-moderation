@@ -6,7 +6,7 @@ import { baseName, providerLabel, semanticOnly, VERDICT_ZH, videoVerdict } from 
 import type { LogEntry, ModerationReport, ModerationRequest, ReviewDecision, Settings, Stage, StageId, VideoItem, WorkerEvent } from "./types";
 
 export type EngineState = "connecting" | "ready" | "running" | "error";
-export const STAGE_ORDER: StageId[] = ["engine", "prepare", "align", "jev", "openai", "report"];
+export const STAGE_ORDER: StageId[] = ["engine", "prepare", "align", "jev", "openai"];
 export type Stages = Record<StageId, Stage>;
 /** Everything in a request except the video; fixed when the queue starts. */
 export type RunConfig = Omit<ModerationRequest, "video_path" | "job_id">;
@@ -404,6 +404,27 @@ export function useModeration() {
     append("info", "历史", `读取历史结果 ${fresh.length} 个`);
     fresh.slice(0, 40).forEach(requestThumbnail);
   }
+  /** Delete finished videos: their result folders on disk, then the rows. Resolves to an error message, if any. */
+  async function deleteVideos(ids: string[]): Promise<string | undefined> {
+    const items = videosRef.current.filter(v => ids.includes(v.id) && v.status !== "running" && v.status !== "queued");
+    const paths = items.flatMap(v => v.report ? [v.report.report_path] : []);
+    let deleted = new Set<string>(), failed: string[] = [];
+    if (paths.length) {
+      const answer = await request("delete_results", { report_paths: paths, output_root: settingsRef.current?.output_root });
+      if (answer.error) { append("error", "删除", String(answer.error)); return String(answer.error); }
+      deleted = new Set(answer.deleted as string[]);
+      failed = answer.failed as string[];
+    }
+    // Rows without a report (failed before one was written) have nothing on disk.
+    const gone = new Set(items.filter(v => !v.report || deleted.has(v.report.report_path)).map(v => v.id));
+    setVideos(list => list.filter(v => !gone.has(v.id)));
+    append("ok", "删除", `删除 ${gone.size} 个审核结果`);
+    if (failed.length) {
+      const message = `${failed.length} 个结果删除失败，文件可能正被占用`;
+      append("warn", "删除", message);
+      return message;
+    }
+  }
   /** Ask for the covers of listed videos that have none yet (history beyond the first 40). */
   function ensureThumbnails(items: VideoItem[]) {
     items.filter(v => !v.thumb).forEach(requestThumbnail);
@@ -426,5 +447,5 @@ export function useModeration() {
 
   return { preview, settings, setSettings, busy: running > 0, running, limit, engine, message, videos, queueActive,
            log, stagesById, batch, startQueue, stopQueue, addVideos, addFolder, removeVideo, clearQueued,
-           cancelVideo, cancelAll, requeue, retryFailed, reevaluate, setReview, loadHistory, ensureThumbnails, request };
+           cancelVideo, cancelAll, requeue, retryFailed, reevaluate, setReview, loadHistory, ensureThumbnails, deleteVideos, request };
 }

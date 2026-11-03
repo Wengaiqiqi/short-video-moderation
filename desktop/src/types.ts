@@ -79,7 +79,7 @@ export interface ModerationRequest {
 /** One line in the FEED panel. Kept in memory for the current window only. */
 export interface LogEntry { id: number; at: number; level: "info" | "run" | "ok" | "warn" | "error"; tag: string; text: string }
 
-export type StageId = "engine" | "prepare" | "align" | "jev" | "openai" | "report";
+export type StageId = "engine" | "prepare" | "align" | "jev" | "openai";
 export type StageState = "wait" | "run" | "pass" | "warn" | "fail" | "skip";
 export interface Stage { id: StageId; state: StageState; done?: number; total?: number }
 

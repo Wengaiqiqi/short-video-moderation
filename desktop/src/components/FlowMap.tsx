@@ -130,7 +130,8 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
     const slots = packSlots(cx, cy, R, size, 6);
     // Stage boxes sit centred between the disc and the bins; the merge arcs bulge to their left.
     const left = cx + R + clamp(W * 0.06, 44, 70), right = binX - clamp(W * 0.045, 30, 50);
-    const midW = clamp(right - left, 130, 300);
+    // Boxes only as wide as their content (number, title, state dot); the rails take up the rest.
+    const midW = clamp(right - left, 130, 164);
     const midX = left + Math.max(0, (right - left - midW) / 2);
     const spacing = clamp(H * 0.23, 70, 124);
     const y = { top: cy - spacing, mid: cy, bot: cy + spacing };
@@ -263,7 +264,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
         { key: "asr" as const, no: "02", zh: "语音识别", y: geometry.y.bot, tall: false, count: asrBusy },
       ].map(stage => {
         const s = state[stage.key];
-        return <div key={stage.key} className={`stage s-${s}${stage.tall ? " hub" : ""}${s === "run" && stage.tall ? " hot" : ""}${runningVideos.length ? "" : " idle"}${geometry.midW < 230 ? " compact" : geometry.midW < 330 ? " snug" : ""}`}
+        return <div key={stage.key} className={`stage s-${s}${stage.tall ? " hub" : ""}${s === "run" && stage.tall ? " hot" : ""}${runningVideos.length ? "" : " idle"}${geometry.midW < 150 ? " compact" : ""}`}
           style={{ left: geometry.midX, top: stage.y - (stage.tall ? 29 : 25), width: geometry.midW }}>
           <span className="stage-no">{stage.no}</span>
           <div className="stage-body">

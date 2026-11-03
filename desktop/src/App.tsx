@@ -185,7 +185,7 @@ export default function App() {
       <Results videos={videos} video={video} onVideo={selectVideo} bin={bin} onBin={selectBin}
         segment={segmentId} onSegment={setSegmentId} filter={filter} onFilter={setFilter} preview={preview}
         scope={scope} onScope={s => { setScope(s); setBin(null); }} onExport={list => { void exportCsv(list); }}
-        onRefreshHistory={() => { void m.loadHistory(); }} onThumbs={m.ensureThumbnails}
+        onRefreshHistory={() => { void m.loadHistory(); }} onThumbs={m.ensureThumbnails} onDelete={m.deleteVideos}
         onReview={(id, decision) => { void m.setReview(id, decision); }}
         onRetryFailed={id => { const run = runConfig(); if (run) m.retryFailed(id, run); }}
         onRerun={(id, how) => { const run = runConfig(how); if (run) m.reevaluate(id, run); }}

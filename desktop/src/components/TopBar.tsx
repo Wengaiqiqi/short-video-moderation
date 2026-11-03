@@ -1,5 +1,7 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import logo from "../assets/logo.png";
+import logoDark from "../assets/logo-dark.png";
 import { finalVerdict, fmtDuration } from "../lib/report";
 import type { BatchInfo } from "../useModeration";
 import type { VideoItem } from "../types";
@@ -70,7 +72,7 @@ export default function TopBar({ preview, videos, batch, queueActive, limit, the
   ];
   return <header className="topbar" onMouseDown={preview ? undefined : dragWindow}>
     <div className="brand">
-      <div className="brand-title"><i className="brand-mark" />短视频内容审核系统</div>
+      <div className="brand-title"><img className="brand-logo" src={theme === "dark" ? logoDark : logo} alt="" draggable={false} />短视频内容审核系统</div>
       {preview && <div className="brand-sub"><span className="tag demo">演示数据</span></div>}
     </div>
     <dl className="kpis" aria-label="视频统计">

@@ -8,7 +8,7 @@ from .desktop import (cancel_jobs, initial_settings, list_videos, start_evaluati
                       video_thumbnail)
 from .errors import UserFacingError
 from .evidence import probe_duration, segment_clip, segment_evidence, split_video
-from .library import export_csv, list_history, reveal_report, save_review, save_settings
+from .library import delete_results, export_csv, list_history, reveal_report, save_review, save_settings
 
 _output_lock = threading.Lock()
 
@@ -100,6 +100,9 @@ def main():
             elif action == 'export_csv':
                 tools.submit(_tool('export.done', request, lambda p=payload: {
                     'path': export_csv(p.get('path'), p.get('rows'))}, '导出失败'))
+            elif action == 'delete_results':
+                tools.submit(_tool('results.deleted', request, lambda p=payload: delete_results(
+                    p.get('report_paths'), p.get('output_root')), '删除审核结果失败'))
             elif action == 'reveal_report':
                 tools.submit(_tool('report.revealed', request, lambda p=payload: {'path': reveal_report(p.get('report_path'))},
                                    '无法打开报告所在文件夹'))
