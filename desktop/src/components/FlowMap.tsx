@@ -178,7 +178,9 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
       </defs>
       <path className="disc-halo" d={`M${geometry.cx},${geometry.cy - geometry.R - 14} A${geometry.R + 14},${geometry.R + 14} 0 0 1 ${geometry.cx},${geometry.cy + geometry.R + 14}`} />
       <path className="disc-edge" d={`M${geometry.cx},${geometry.cy - geometry.R} A${geometry.R},${geometry.R} 0 0 1 ${geometry.cx},${geometry.cy + geometry.R}`} />
-      {geometry.slots.map((s, i) => <rect key={i} className="slot" x={s.x} y={s.y} width={geometry.size} height={geometry.size} rx={9} />)}
+      {/* Empty slots breathe in a slow ripple out from the disc centre */}
+      {geometry.slots.map((s, i) => <rect key={i} className="slot" x={s.x} y={s.y} width={geometry.size} height={geometry.size} rx={9}
+        style={{ animationDelay: `${(Math.hypot(s.x + geometry.size / 2 - geometry.cx, s.y + geometry.size / 2 - geometry.cy) / geometry.R) * 2.4}s` }} />)}
 
       {/* Rails: disc → 画面切分 / 语音识别 (in parallel) → merge into 分类判断 → three bins */}
       <path className={`rail s-${state.frames}`} d={geometry.paths.inTop} markerEnd={`url(#arrow-${state.frames})`} />
@@ -196,6 +198,14 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
           <Comet d={geometry.paths.mergeBot} tone="data" duration={1300} delay={650} loop width={0.8} />
           {VERDICTS.map((v, i) => <Comet key={v.id} d={geometry.paths.out[v.id]} tone={v.id} duration={1600} delay={1300 + i * 400} loop width={0.8} />)}
         </>}
+        {/* Idle: a faint, slow trickle along the same route so the map never looks frozen */}
+        {runningVideos.length === 0 && <g className="idle">
+          <Comet d={geometry.paths.inTop} tone="data" duration={5600} loop width={0.6} />
+          <Comet d={geometry.paths.inBot} tone="data" duration={5600} delay={2800} loop width={0.6} />
+          <Comet d={geometry.paths.mergeTop} tone="data" duration={4800} delay={1400} loop width={0.6} />
+          <Comet d={geometry.paths.mergeBot} tone="data" duration={4800} delay={4200} loop width={0.6} />
+          {VERDICTS.map((v, i) => <Comet key={v.id} d={geometry.paths.out[v.id]} tone={v.id} duration={6400} delay={2000 + i * 2100} loop width={0.6} />)}
+        </g>}
         {/* Burst: a video enters classification — both lines pour into 分类判断 */}
         {Object.entries(entering).map(([id, at]) => <g key={`enter-${id}-${at}`}>
           <Comet d={geometry.paths.mergeTop} tone="hot" duration={900} width={1.3} />
@@ -252,7 +262,7 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
         { key: "asr" as const, no: "02", zh: "语音识别", y: geometry.y.bot, tall: false, count: asrBusy },
       ].map(stage => {
         const s = state[stage.key];
-        return <div key={stage.key} className={`stage s-${s}${stage.tall ? " hub" : ""}${s === "run" && stage.tall ? " hot" : ""}${geometry.midW < 230 ? " compact" : geometry.midW < 330 ? " snug" : ""}`}
+        return <div key={stage.key} className={`stage s-${s}${stage.tall ? " hub" : ""}${s === "run" && stage.tall ? " hot" : ""}${runningVideos.length ? "" : " idle"}${geometry.midW < 230 ? " compact" : geometry.midW < 330 ? " snug" : ""}`}
           style={{ left: geometry.midX, top: stage.y - (stage.tall ? 29 : 25), width: geometry.midW }}>
           <span className="stage-no">{stage.no}</span>
           <div className="stage-body">

@@ -71,7 +71,7 @@ interface Props {
   filter: ProviderFilter; onFilter: (filter: ProviderFilter) => void;
   preview: boolean;
   scope: "batch" | "history"; onScope: (scope: "batch" | "history") => void;
-  onExport: (videos: VideoItem[]) => void; onRefreshHistory: () => void;
+  onExport: (videos: VideoItem[]) => void; onRefreshHistory: () => void; onThumbs: (videos: VideoItem[]) => void;
   onReview: (id: string, decision: ReviewDecision["decision"] | null) => void;
   onRetryFailed: (id: string) => void; onRerun: (id: string, how: Rerun) => void;
   onCancel: (id: string) => void; onRequeue: (id: string) => void;
@@ -89,9 +89,13 @@ export function listedVideos(videos: VideoItem[], scope: Props["scope"], bin: Ve
   return { finished, rows: bin ? finished.filter(v => finalVerdict(v) === bin) : finished };
 }
 
-function VideoList({ videos, onVideo, bin, onBin, scope, onScope, onExport, onRefreshHistory }: Props) {
+function VideoList({ videos, onVideo, bin, onBin, scope, onScope, onExport, onRefreshHistory, onThumbs }: Props) {
   const { finished, rows } = listedVideos(videos, scope, bin);
   const historyCount = videos.filter(v => v.history).length;
+  // Covers are fetched on demand for the rows being listed, newest first.
+  const missing = rows.filter(v => !v.thumb);
+  const missingKey = missing.map(v => v.id).join();
+  useEffect(() => { if (missing.length) onThumbs([...missing].reverse()); }, [missingKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return <section className="panel dock-panel">
     <header className="panel-head"><span><b>视频结果</b></span>
       <span className="head-tools">

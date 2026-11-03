@@ -69,7 +69,11 @@ export function useModeration() {
     setVideos(list => list.map(v => v.id === id ? { ...v, ...(typeof patch === "function" ? patch(v) : patch) } : v));
   }, []);
 
+  /** Videos whose cover was already asked for (each video once). */
+  const thumbAsked = useRef(new Set<string>());
   const requestThumbnail = useCallback((item: VideoItem) => {
+    if (thumbAsked.current.has(item.id)) return;
+    thumbAsked.current.add(item.id);
     if (preview) {
       window.setTimeout(() => patchVideo(item.id, { thumb: demoThumbnail(item.path),
         duration_sec: /长视频/.test(item.name) ? 1500 : 60 }), 120);
@@ -400,6 +404,10 @@ export function useModeration() {
     append("info", "历史", `读取历史结果 ${fresh.length} 个`);
     fresh.slice(0, 40).forEach(requestThumbnail);
   }
+  /** Ask for the covers of listed videos that have none yet (history beyond the first 40). */
+  function ensureThumbnails(items: VideoItem[]) {
+    items.filter(v => !v.thumb).forEach(requestThumbnail);
+  }
   // History is read once the engine is ready.
   const historyLoaded = useRef(false);
   useEffect(() => {
@@ -418,5 +426,5 @@ export function useModeration() {
 
   return { preview, settings, setSettings, busy: running > 0, running, limit, engine, message, videos, queueActive,
            log, stagesById, batch, startQueue, stopQueue, addVideos, addFolder, removeVideo, clearQueued,
-           cancelVideo, cancelAll, requeue, retryFailed, reevaluate, setReview, loadHistory, request };
+           cancelVideo, cancelAll, requeue, retryFailed, reevaluate, setReview, loadHistory, ensureThumbnails, request };
 }

@@ -280,15 +280,6 @@ export function costOf(report: ModerationReport | null | undefined): Cost {
   }
   return { tokens, asrSeconds: report?.asr_statistics?.uploaded_seconds ?? 0 };
 }
-export function addCosts(costs: Cost[]): Cost {
-  const tokens: Record<string, number> = {};
-  let asrSeconds = 0;
-  for (const c of costs) {
-    for (const [k, v] of Object.entries(c.tokens)) tokens[k] = (tokens[k] ?? 0) + v;
-    asrSeconds += c.asrSeconds;
-  }
-  return { tokens, asrSeconds };
-}
 export function fmtTokens(n: number) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n));
 }

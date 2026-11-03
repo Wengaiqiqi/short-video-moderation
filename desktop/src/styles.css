@@ -22,7 +22,7 @@
   --on-strong: #07080b; --strong-hover: #fff; --on-verdict: #07080b;
   --block-text: #ff7480;
   --scroll: #22262e; --tab-shadow: 0 2px 8px rgba(0, 0, 0, .3); --foot-fade: rgba(0, 0, 0, .18);
-  --disc-edge: #2a2f38; --disc-halo: #191c22; --slot: rgba(255, 255, 255, .025);
+  --disc-edge: #2a2f38; --disc-halo: #191c22; --slot: rgba(255, 255, 255, .025); --slot-hi: rgba(255, 255, 255, .06);
   --rail: #2c313a; --arrow: #5a616d; --comet-core: #fff; --comet-hot: #8fd3ff;
   --tile-shadow: 0 4px 12px rgba(0, 0, 0, .35); --ring: rgba(255, 255, 255, .9); --lift-shadow: 0 8px 22px rgba(0, 0, 0, .5);
   --note: #5a616c; --dot-idle: #3d434d; --stage-bg: rgba(21, 24, 30, .92); --hub-bg: rgba(27, 31, 39, .95);
@@ -63,7 +63,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
   --on-strong: #ffffff; --strong-hover: #000; --on-verdict: #ffffff;
   --block-text: #c41f35;
   --scroll: #c9ced6; --tab-shadow: 0 1px 4px rgba(25, 35, 55, .12); --foot-fade: rgba(25, 35, 55, .02);
-  --disc-edge: #c5ccd6; --disc-halo: #dde2e9; --slot: rgba(20, 30, 50, .045);
+  --disc-edge: #c5ccd6; --disc-halo: #dde2e9; --slot: rgba(20, 30, 50, .045); --slot-hi: rgba(20, 30, 50, .085);
   --rail: #c3cad4; --arrow: #8d96a3; --comet-core: #0b4fb0; --comet-hot: #3d8ef0;
   --tile-shadow: 0 3px 10px rgba(25, 35, 55, .15); --ring: rgba(20, 25, 35, .85); --lift-shadow: 0 8px 22px rgba(25, 35, 55, .25);
   --note: #8a93a0; --dot-idle: #c3c9d2; --stage-bg: rgba(255, 255, 255, .95); --hub-bg: rgba(255, 255, 255, .98);
@@ -220,8 +220,10 @@ fieldset.plain:disabled { opacity: .55; }
 }
 .flow svg { position: absolute; inset: 0; display: block; }
 .disc-edge { fill: none; stroke: var(--disc-edge); stroke-width: 1.2; }
-.disc-halo { fill: none; stroke: var(--disc-halo); stroke-dasharray: 2 6; }
-.slot { fill: var(--slot); }
+.disc-halo { fill: none; stroke: var(--disc-halo); stroke-dasharray: 2 6; animation: halo-drift 8s linear infinite; }
+.slot { fill: var(--slot); animation: slot-breathe 6s ease-in-out infinite both; }
+@keyframes halo-drift { to { stroke-dashoffset: -16; } }
+@keyframes slot-breathe { 0%, 100% { fill: var(--slot); } 50% { fill: var(--slot-hi); } }
 
 .rail { fill: none; stroke: var(--rail); stroke-width: 1.3; stroke-linecap: round; }
 .rail.s-run { stroke: rgba(79, 182, 255, .55); }
@@ -249,6 +251,9 @@ fieldset.plain:disabled { opacity: .55; }
 .comet.t-block .comet-tail, .comet.t-block .comet-halo { stroke: var(--block); }
 .comet.t-review .comet-tail, .comet.t-review .comet-halo { stroke: var(--review); }
 .comet.t-failed .comet-tail, .comet.t-failed .comet-halo { stroke: var(--failed); }
+/* Idle trickle: same comets, dimmer and without the bright head */
+.idle .comet { opacity: .5; }
+.idle .comet-core { display: none; }
 @keyframes comet-tail { from { stroke-dashoffset: .42; } to { stroke-dashoffset: -1.18; } }
 @keyframes comet-halo { from { stroke-dashoffset: .16; } to { stroke-dashoffset: -1.44; } }
 @keyframes comet-core { from { stroke-dashoffset: .05; } to { stroke-dashoffset: -1.55; } }
@@ -316,6 +321,13 @@ fieldset.plain:disabled { opacity: .55; }
 .stage.hub { height: 60px; border-radius: 12px; background: var(--hub-bg); }
 .stage.hub .stage-title b { font-size: 18px; }
 .stage.hot { animation: hub-glow 1.8s ease-in-out infinite; }
+.stage.idle .stage-state i { animation: breathe 4.8s ease-in-out infinite; }
+.stage.hub.idle { animation: hub-idle 6s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .35; transform: scale(.75); } }
+@keyframes hub-idle {
+  0%, 100% { box-shadow: var(--shadow); }
+  50% { box-shadow: var(--shadow), 0 0 22px rgba(79, 182, 255, .14); }
+}
 @keyframes hub-glow {
   0%, 100% { box-shadow: var(--shadow), 0 0 16px rgba(79, 182, 255, .2); }
   50% { box-shadow: var(--shadow), 0 0 34px rgba(79, 182, 255, .45); }
@@ -418,6 +430,7 @@ tbody tr:focus-visible { outline: 2px solid rgba(79, 182, 255, .7); outline-offs
 .vtag.none { color: var(--muted); background: transparent; }
 
 .detail { flex: 1; min-height: 0; overflow-y: auto; padding: 0 14px 12px; }
+.detail-empty { flex: 1; display: grid; place-items: center; margin: 0; padding-bottom: 24px; color: var(--faint); font-size: 12.5px; letter-spacing: .12em; }
 .detail-provider { padding: 8px 10px 9px; margin-bottom: 6px; border-radius: var(--r); background: var(--surface-2); }
 .detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .detail-head b { font: 600 11.5px var(--mono); letter-spacing: .1em; }

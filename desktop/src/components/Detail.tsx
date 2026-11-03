@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { VERDICT_ZH, addCosts, categoryLabel, costOf, errorText, flaggedSentences, fmtTime, fmtTokens, pad2, providerLabel,
-         providersOf, tally, thresholds, transcriptsOf, verdictOf, type SegmentView } from "../lib/report";
+import { VERDICT_ZH, categoryLabel, costOf, errorText, flaggedSentences, fmtTime, fmtTokens, pad2, providerLabel,
+         providersOf, tally, transcriptsOf, verdictOf, type SegmentView } from "../lib/report";
 import { EvidenceStrip, Scores, VideoModal, useClip, useEvidence, type Request } from "./Evidence";
 import { VideoTag } from "./Results";
-import type { ModerationReport, Settings, VideoItem } from "../types";
+import type { ModerationReport, VideoItem } from "../types";
 
 const MODALITY: Record<string, string> = { multimodal: "画面＋转写", visual: "仅画面", text: "仅转写" };
 
@@ -55,15 +55,14 @@ function FullTextFacts({ report, providers }: { report: ModerationReport; provid
   })}</dd></div>;
 }
 
-/** Selected window's evidence and scores; otherwise the selected video's summary; otherwise the batch summary. */
-export default function Detail({ video, videos, providers, segment, cloudAsr, settings, request, onOpenEvidence, onCalibrate, onSegment }: {
-  video: VideoItem | null; videos: VideoItem[]; providers: string[]; segment: SegmentView | null; cloudAsr: boolean;
-  settings: Settings | null; request: Request; onOpenEvidence: () => void; onCalibrate: () => void; onSegment: (id: number) => void;
+/** Selected window's evidence and scores; otherwise the selected video's summary; otherwise an empty state. */
+export default function Detail({ video, videos, providers, segment, request, onOpenEvidence, onCalibrate, onSegment }: {
+  video: VideoItem | null; videos: VideoItem[]; providers: string[]; segment: SegmentView | null;
+  request: Request; onOpenEvidence: () => void; onCalibrate: () => void; onSegment: (id: number) => void;
 }) {
   const evidence = useEvidence(video, segment, request);
   const { clip, load } = useClip(video, segment, request);
   const report = video?.report ?? null;
-  const limits = thresholds(report);
   const [playing, setPlaying] = useState(false);
   useEffect(() => { setPlaying(false); }, [video?.id]);
 
@@ -111,24 +110,10 @@ export default function Detail({ video, videos, providers, segment, cloudAsr, se
     </section>;
   }
 
-  const batch = videos.filter(v => v.status === "done" && !v.history);
-  const total = addCosts(batch.map(v => costOf(v.report)));
   const labelled = videos.filter(v => v.review && v.review.decision !== "review" && v.report).length;
   return <section className="panel dock-panel">
-    <header className="panel-head"><span><b>运行说明</b></span>
+    <header className="panel-head"><span><b>视频</b></span>
       <button type="button" className="link-button" onClick={onCalibrate} title="用人工终判或标注文件校准阈值">阈值校准{labelled ? ` · ${labelled}` : ""}</button></header>
-    <div className="detail">
-      <dl className="facts">
-        <div><dt>阈值</dt><dd>复核 ≥ {limits.review.toFixed(2)} · 拦截 ≥ {limits.block.toFixed(2)}</dd></div>
-        <div><dt>归类</dt><dd>整段取最严 · 仅全文报出归待定</dd></div>
-        <div><dt>本批用量</dt><dd><CostLine cost={total} /></dd></div>
-      </dl>
-      <ul className="caveats">
-        <li className={settings?.policy?.calibrated_at ? "ok" : undefined}>{settings?.policy?.calibrated_at ? `阈值已于 ${settings.policy.calibrated_at} 校准` : "阈值未校准"}</li>
-        <li>JEV 概率 ≠ 对照自报分数</li>
-        <li>片段范围 ≠ 违规时刻</li>
-        {cloudAsr && <li className="warn">云端 ASR 时间为语音段级</li>}
-      </ul>
-    </div>
+    <p className="detail-empty">暂未选择视频</p>
   </section>;
 }

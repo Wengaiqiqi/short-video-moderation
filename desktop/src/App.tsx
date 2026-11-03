@@ -87,7 +87,6 @@ export default function App() {
   const providers = useMemo(() => visibleProviders(video?.report, filter), [video, filter]);
   const segments = useMemo(() => segmentsOf(video?.report, providers), [video, providers]);
   const segment = segments.find(s => s.id === segmentId) ?? null;
-  const cloudAsr = (m.batch?.asrEngine ?? settings?.asr_engine) === "mimo-cloud";
 
   function selectVideo(id: string | null) {
     setVideoId(id); setSegmentId(null); setFilter("all");
@@ -200,13 +199,13 @@ export default function App() {
       <Results videos={videos} video={video} onVideo={selectVideo} bin={bin} onBin={selectBin}
         segment={segmentId} onSegment={setSegmentId} filter={filter} onFilter={setFilter} preview={preview}
         scope={scope} onScope={s => { setScope(s); setBin(null); }} onExport={list => { void exportCsv(list); }}
-        onRefreshHistory={() => { void m.loadHistory(); }}
+        onRefreshHistory={() => { void m.loadHistory(); }} onThumbs={m.ensureThumbnails}
         onReview={(id, decision) => { void m.setReview(id, decision); }}
         onRetryFailed={id => { const run = runConfig(); if (run) m.retryFailed(id, run); }}
         onRerun={(id, how) => { const run = runConfig(how); if (run) m.reevaluate(id, run); }}
         onCancel={m.cancelVideo} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }}
         onReveal={async path => { const answer = await m.request("reveal_report", { report_path: path }); return answer.error ? String(answer.error) : undefined; }} />
-      <Detail video={video} videos={videos} providers={providers} segment={segment} cloudAsr={cloudAsr} settings={settings}
+      <Detail video={video} videos={videos} providers={providers} segment={segment}
         request={m.request} onOpenEvidence={() => setEvidenceOpen(true)} onCalibrate={() => setCalibrating(true)} onSegment={setSegmentId} />
     </div>
     {evidenceOpen && video && segment && <EvidenceModal video={video} segments={segments} segment={segment} providers={providers}
