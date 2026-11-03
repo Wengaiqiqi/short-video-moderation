@@ -576,9 +576,13 @@ tbody tr.split td:first-child { box-shadow: inset 3px 0 0 var(--review); }
 .preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .tabs { grid-template-columns: repeat(5, 1fr); }
 
-.brand-title span { margin-left: 4px; font: 400 12px var(--sans); letter-spacing: .02em; color: var(--muted); }
-/* The subtitle gives way before the numbers do. */
-@media (max-width: 1440px) { .brand-title span { display: none; } }
 .kpi dd { min-width: 0; }
 .theme-toggle { width: 32px; height: 32px; margin-right: 8px; border-radius: 50%; background: var(--surface); color: var(--text-2); font-size: 15px; cursor: pointer; box-shadow: var(--shadow); transition: background .15s, color .15s; }
 .theme-toggle:hover { background: var(--surface-3); color: var(--text); }
+/* Window controls in the top bar (the system title bar is off) */
+.topbar { user-select: none; }
+.win-controls { display: flex; gap: 2px; margin-right: 4px; }
+.win-btn { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 50%; background: transparent; color: var(--text-2); cursor: pointer; transition: background .15s, color .15s; }
+.win-btn:hover { background: var(--surface-3); color: var(--text); }
+.win-btn.close:hover { background: #e81123; color: #fff; }
+.win-btn svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.1; }

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { finalVerdict, fmtDuration } from "../lib/report";
 import type { BatchInfo } from "../useModeration";
 import type { VideoItem } from "../types";
@@ -19,6 +20,37 @@ function useNow(active = true) {
   return now;
 }
 
+/** Minimise / maximise / close: the window has no system title bar, the top bar takes its place. */
+function WindowControls() {
+  const [maximized, setMaximized] = useState(false);
+  useEffect(() => {
+    const win = getCurrentWindow();
+    let alive = true, unlisten: (() => void) | undefined;
+    const sync = () => { void win.isMaximized().then(m => { if (alive) setMaximized(m); }); };
+    sync();
+    void win.onResized(sync).then(u => { if (alive) unlisten = u; else u(); });
+    return () => { alive = false; unlisten?.(); };
+  }, []);
+  const win = getCurrentWindow();
+  return <div className="win-controls">
+    <button type="button" className="win-btn" aria-label="最小化" title="最小化" onClick={() => void win.minimize()}>
+      <svg viewBox="0 0 10 10"><path d="M1 5.5h8" /></svg></button>
+    <button type="button" className="win-btn" aria-label={maximized ? "还原" : "最大化"} title={maximized ? "还原" : "最大化"}
+      onClick={() => void win.toggleMaximize()}>
+      {maximized ? <svg viewBox="0 0 10 10"><path d="M1.5 3.5h5v5h-5z M3.5 3.5v-2h5v5h-2" /></svg>
+        : <svg viewBox="0 0 10 10"><path d="M1.5 1.5h7v7h-7z" /></svg>}</button>
+    <button type="button" className="win-btn close" aria-label="关闭" title="关闭" onClick={() => void win.close()}>
+      <svg viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" /></svg></button>
+  </div>;
+}
+
+/** Drag the window by any empty part of the top bar; double-click maximises, as a title bar does. */
+function dragWindow(e: MouseEvent) {
+  if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+  const win = getCurrentWindow();
+  void (e.detail === 2 ? win.toggleMaximize() : win.startDragging());
+}
+
 export default function TopBar({ preview, videos, batch, queueActive, limit, theme, onTheme }: Props) {
   const now = useNow();
   // Counts cover this batch; a reviewer's final decision replaces the model verdict.
@@ -36,9 +68,9 @@ export default function TopBar({ preview, videos, batch, queueActive, limit, the
     { label: "FAIL", zh: "失败", value: String(failed), tone: tone(failed, "failed") },
     { label: "TIME", zh: "用时", value: elapsed == null ? "—" : fmtDuration(elapsed) },
   ];
-  return <header className="topbar">
+  return <header className="topbar" onMouseDown={preview ? undefined : dragWindow}>
     <div className="brand">
-      <div className="brand-title"><i className="brand-mark" />短视频内容审核系统<span>基于多模态大模型</span></div>
+      <div className="brand-title"><i className="brand-mark" />短视频内容审核系统</div>
       {preview && <div className="brand-sub"><span className="tag demo">演示数据</span></div>}
     </div>
     <dl className="kpis" aria-label="视频统计">
@@ -50,6 +82,7 @@ export default function TopBar({ preview, videos, batch, queueActive, limit, the
       <button type="button" className="theme-toggle" onClick={() => onTheme(theme === "dark" ? "light" : "dark")}
         aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "浅色主题" : "深色主题"}>
         {theme === "dark" ? "☀" : "☾"}</button>
+      {!preview && <WindowControls />}
     </div>
   </header>;
 }

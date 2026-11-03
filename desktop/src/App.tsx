@@ -175,9 +175,6 @@ export default function App() {
         onStart={start} onStop={m.stopQueue} running={m.running} limit={m.limit}
         onCancel={m.cancelVideo} onCancelAll={m.cancelAll} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }} />
       <section className="panel flow-panel">
-        <header className="panel-head">
-          <span><b>视频流向</b>{preview && <span className="tag demo">演示数据</span>}</span>
-        </header>
         <FlowMap videos={videos} stagesById={stagesById} selected={videoId} onSelect={selectVideo} bin={bin} onBin={selectBin} />
       </section>
     </div>
