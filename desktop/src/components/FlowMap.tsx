@@ -165,7 +165,8 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
   return <div className="flow" ref={box}>
     {geometry && <svg width={W} height={H} aria-hidden="true">
       <defs>
-        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+        {/* Region in canvas units: a bounding-box region is empty for a straight horizontal rail, hiding its glow */}
+        <filter id="glow" filterUnits="userSpaceOnUse" x={0} y={0} width={W} height={H}>
           <feGaussianBlur stdDeviation="3.2" result="blur" />
           <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
