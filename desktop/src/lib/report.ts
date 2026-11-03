@@ -283,33 +283,3 @@ export function costOf(report: ModerationReport | null | undefined): Cost {
 export function fmtTokens(n: number) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n));
 }
-
-/** Highest category score of a video (across windows and the given providers). */
-export function videoScore(report: ModerationReport | null | undefined, providers?: string[]) {
-  let peak = 0;
-  for (const [provider, data] of Object.entries(report?.providers ?? {})) {
-    if (providers && !providers.includes(provider)) continue;
-    for (const row of data.segments) peak = Math.max(peak, peakOf(row));
-  }
-  return peak;
-}
-
-export interface CalibrationRow { threshold: number; tp: number; fp: number; fn: number; tn: number;
-  precision: number; recall: number; f1: number; accuracy: number }
-/** Sweep a block threshold over labelled videos: score ≥ threshold → blocked. */
-export function calibrate(samples: { score: number; blocked: boolean }[], step = 0.05): CalibrationRow[] {
-  const rows: CalibrationRow[] = [];
-  for (let t = step; t < 1 - 1e-9; t += step) {
-    const threshold = Math.round(t * 100) / 100;
-    let tp = 0, fp = 0, fn = 0, tn = 0;
-    for (const s of samples) {
-      const predicted = s.score >= threshold;
-      if (predicted && s.blocked) tp++; else if (predicted) fp++; else if (s.blocked) fn++; else tn++;
-    }
-    const precision = tp + fp ? tp / (tp + fp) : 0;
-    const recall = tp + fn ? tp / (tp + fn) : 0;
-    rows.push({ threshold, tp, fp, fn, tn, precision, recall, f1: precision + recall ? 2 * precision * recall / (precision + recall) : 0,
-                accuracy: samples.length ? (tp + tn) / samples.length : 0 });
-  }
-  return rows;
-}

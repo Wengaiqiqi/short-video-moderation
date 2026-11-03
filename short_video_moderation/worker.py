@@ -8,7 +8,7 @@ from .desktop import (cancel_jobs, initial_settings, list_videos, start_evaluati
                       video_thumbnail)
 from .errors import UserFacingError
 from .evidence import probe_duration, segment_clip, segment_evidence, split_video
-from .library import export_csv, list_history, read_labels, reveal_report, save_review, save_settings
+from .library import export_csv, list_history, reveal_report, save_review, save_settings
 
 _output_lock = threading.Lock()
 
@@ -103,9 +103,6 @@ def main():
             elif action == 'reveal_report':
                 tools.submit(_tool('report.revealed', request, lambda p=payload: {'path': reveal_report(p.get('report_path'))},
                                    '无法打开报告所在文件夹'))
-            elif action == 'read_labels':
-                tools.submit(_tool('labels.read', request, lambda p=payload: {'labels': read_labels(p.get('path'))},
-                                   '无法读取标注文件'))
             elif action == 'split_video':
                 tools.submit(_tool('video.split', request, lambda p=payload: {
                     'id': p.get('id'), 'parts': split_video(p['video_path'], part_sec=float(p.get('part_sec') or 590),

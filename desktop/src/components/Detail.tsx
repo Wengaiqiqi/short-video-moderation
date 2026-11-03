@@ -56,9 +56,9 @@ function FullTextFacts({ report, providers }: { report: ModerationReport; provid
 }
 
 /** Selected window's evidence and scores; otherwise the selected video's summary; otherwise an empty state. */
-export default function Detail({ video, videos, providers, segment, request, onOpenEvidence, onCalibrate, onSegment }: {
-  video: VideoItem | null; videos: VideoItem[]; providers: string[]; segment: SegmentView | null;
-  request: Request; onOpenEvidence: () => void; onCalibrate: () => void; onSegment: (id: number) => void;
+export default function Detail({ video, providers, segment, request, onOpenEvidence, onSegment }: {
+  video: VideoItem | null; providers: string[]; segment: SegmentView | null;
+  request: Request; onOpenEvidence: () => void; onSegment: (id: number) => void;
 }) {
   const evidence = useEvidence(video, segment, request);
   const { clip, load } = useClip(video, segment, request);
@@ -110,10 +110,8 @@ export default function Detail({ video, videos, providers, segment, request, onO
     </section>;
   }
 
-  const labelled = videos.filter(v => v.review && v.review.decision !== "review" && v.report).length;
   return <section className="panel dock-panel">
-    <header className="panel-head"><span><b>视频</b></span>
-      <button type="button" className="link-button" onClick={onCalibrate} title="用人工终判或标注文件校准阈值">阈值校准{labelled ? ` · ${labelled}` : ""}</button></header>
+    <header className="panel-head"><span><b>视频</b></span></header>
     <p className="detail-empty">暂未选择视频</p>
   </section>;
 }

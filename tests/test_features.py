@@ -242,11 +242,6 @@ class LibraryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             library.export_csv(self.root / 'out.exe', [['x']])
 
-    def test_labels_csv_for_calibration(self):
-        path = self.root / 'labels.csv'
-        path.write_text('文件,标签\nD:\\videos\\a.mp4,拦截\nb.mp4,通过\nc.mp4,不确定\n', encoding='utf-8-sig')
-        self.assertEqual(library.read_labels(path), [{'name': 'a.mp4', 'blocked': True}, {'name': 'b.mp4', 'blocked': False}])
-
     def test_reports_are_revealed_only_from_review_folders(self):
         self.assertEqual(library.reveal_command('D:/results/moderation-a/evaluation-b/report.json', 'win32'),
                          'explorer /select,"' + os.path.normpath('D:/results/moderation-a/evaluation-b/report.json') + '"')

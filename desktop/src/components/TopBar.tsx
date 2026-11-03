@@ -6,8 +6,6 @@ import type { VideoItem } from "../types";
 interface Props {
   preview: boolean;
   videos: VideoItem[]; batch: BatchInfo | null; queueActive: boolean; limit: number;
-  /** When the thresholds were last set from labelled data (None until then). */
-  calibrated?: string;
   theme: "dark" | "light"; onTheme: (theme: "dark" | "light") => void;
 }
 
@@ -21,7 +19,7 @@ function useNow(active = true) {
   return now;
 }
 
-export default function TopBar({ preview, videos, batch, queueActive, limit, calibrated, theme, onTheme }: Props) {
+export default function TopBar({ preview, videos, batch, queueActive, limit, theme, onTheme }: Props) {
   const now = useNow();
   // Counts cover this batch; a reviewer's final decision replaces the model verdict.
   const count = (test: (v: VideoItem) => boolean) => videos.filter(v => !v.history && test(v)).length;
@@ -41,10 +39,7 @@ export default function TopBar({ preview, videos, batch, queueActive, limit, cal
   return <header className="topbar">
     <div className="brand">
       <div className="brand-title"><i className="brand-mark" />短视频内容审核系统<span>基于多模态大模型</span></div>
-      <div className="brand-sub">{calibrated
-        ? <span className="tag ok" title={`阈值已于 ${calibrated} 用标注数据校准`}>阈值已校准</span>
-        : <span className="tag warn" title="阈值为实验配置，尚未用标注数据校准">阈值未校准</span>}
-        {preview && <span className="tag demo">演示数据</span>}</div>
+      {preview && <div className="brand-sub"><span className="tag demo">演示数据</span></div>}
     </div>
     <dl className="kpis" aria-label="视频统计">
       {kpis.map(k => <div key={k.label} className={`kpi${k.wide ? " wide" : ""}`}>

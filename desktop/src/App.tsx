@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import Calibration from "./components/Calibration";
 import Detail from "./components/Detail";
 import { EvidenceModal } from "./components/Evidence";
 import Feed from "./components/Feed";
@@ -80,7 +79,6 @@ export default function App() {
   const [segmentId, setSegmentId] = useState<number | null>(null);
   const [filter, setFilter] = useState<ProviderFilter>("all");
   const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const [calibrating, setCalibrating] = useState(false);
   const update = (patch: Partial<TaskForm>) => setForm(f => ({ ...f, ...patch }));
 
   const video = videos.find(v => v.id === videoId) ?? null;
@@ -153,14 +151,6 @@ export default function App() {
       if (answer.error) setError(String(answer.error));
     } catch (e) { setError(String(e)); }
   }
-  async function importLabels() {
-    if (preview) return [{ name: "01-街头采访.mp4", blocked: false }, { name: "03-宠物日常.mp4", blocked: true }];
-    const path = await open({ multiple: false, filters: [{ name: "CSV", extensions: ["csv"] }] });
-    if (typeof path !== "string") return null;
-    const answer = await m.request("read_labels", { path });
-    if (answer.error) throw new Error(String(answer.error));
-    return answer.labels as { name: string; blocked: boolean }[];
-  }
 
   const pending = videos.filter(v => v.status === "queued" || v.status === "running").length;
   const total = videos.filter(v => !v.history && (v.status !== "queued" || queueActive)).length;
@@ -173,8 +163,7 @@ export default function App() {
     ?? [...videos].reverse().find(v => stagesById[v.id]) ?? null;
 
   return <div className={`app${collapsed ? " collapsed" : ""}`}>
-    <TopBar preview={preview} videos={videos} batch={m.batch} queueActive={queueActive} limit={m.limit}
-      calibrated={settings?.policy?.calibrated_at} theme={theme} onTheme={setTheme} />
+    <TopBar preview={preview} videos={videos} batch={m.batch} queueActive={queueActive} limit={m.limit} theme={theme} onTheme={setTheme} />
     <div className="progress-line" role="progressbar" aria-label="队列进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
       <i style={{ width: `${progress * 100}%` }} className={busy ? "busy" : undefined} />
     </div>
@@ -205,18 +194,12 @@ export default function App() {
         onRerun={(id, how) => { const run = runConfig(how); if (run) m.reevaluate(id, run); }}
         onCancel={m.cancelVideo} onRequeue={id => { const run = runConfig(); if (run) m.requeue(id, run); }}
         onReveal={async path => { const answer = await m.request("reveal_report", { report_path: path }); return answer.error ? String(answer.error) : undefined; }} />
-      <Detail video={video} videos={videos} providers={providers} segment={segment}
-        request={m.request} onOpenEvidence={() => setEvidenceOpen(true)} onCalibrate={() => setCalibrating(true)} onSegment={setSegmentId} />
+      <Detail video={video} providers={providers} segment={segment}
+        request={m.request} onOpenEvidence={() => setEvidenceOpen(true)} onSegment={setSegmentId} />
     </div>
     {evidenceOpen && video && segment && <EvidenceModal video={video} segments={segments} segment={segment} providers={providers}
       request={m.request} onSegment={setSegmentId} onClose={() => setEvidenceOpen(false)}
       onReview={decision => { void m.setReview(video.id, decision); }} />}
-    {calibrating && settings && <Calibration videos={videos} policy={settings.policy} onClose={() => setCalibrating(false)}
-      onImport={importLabels}
-      onApply={patch => settings.policy && setSettings({ ...settings, policy: { ...settings.policy, ...patch,
-        calibrated_at: new Date().toLocaleDateString("zh-CN"),
-        review_threshold: Math.round(Math.min(patch.review_threshold ?? settings.policy.review_threshold,
-                                              (patch.block_threshold ?? settings.policy.block_threshold) - 0.05) * 100) / 100 } })} />}
   </div>;
 }
 

@@ -10,16 +10,14 @@ export default function RulesEditor({ settings, onChange }: { settings: Settings
   if (!policy) return <p className="hint">规则加载中…</p>;
   const presets = settings.category_presets ?? {};
   const set = (next: ModerationPolicy) => onChange({ ...settings, policy: next });
-  /** Threshold edits by hand: the policy is no longer the data-calibrated one. */
-  const setThresholds = (next: ModerationPolicy) => { const { calibrated_at: _, ...rest } = next; set(rest); };
   const setRule = (id: string, patch: Partial<CategoryRule>) => {
     const next = { ...policy, categories: { ...policy.categories, [id]: { ...policy.categories[id], ...patch } } };
-    if ("review_threshold" in patch || "block_threshold" in patch) setThresholds(next); else set(next);
+    set(next);
   };
   const clearOverride = (id: string, key: "review_threshold" | "block_threshold") => {
     const rule = { ...policy.categories[id] };
     delete rule[key];
-    setThresholds({ ...policy, categories: { ...policy.categories, [id]: rule } });
+    set({ ...policy, categories: { ...policy.categories, [id]: rule } });
   };
   const missing = Object.entries(presets).filter(([id]) => !policy.categories[id]);
   const enabled = Object.values(policy.categories).filter(r => r.enabled !== false).length;
@@ -27,12 +25,12 @@ export default function RulesEditor({ settings, onChange }: { settings: Settings
 
   return <>
     <div className="group">
-      <h3>全局阈值<span className="h-meta">{policy.calibrated_at ? `已于 ${policy.calibrated_at} 校准 · ` : ""}启用 {enabled} 类</span></h3>
+      <h3>全局阈值<span className="h-meta">启用 {enabled} 类</span></h3>
       <div className="pair">
         <label className="field">复核 ≥<input type="number" min={0} max={1} step={0.05} value={policy.review_threshold}
-          onChange={e => setThresholds({ ...policy, review_threshold: round(Number(e.target.value)) })} /></label>
+          onChange={e => set({ ...policy, review_threshold: round(Number(e.target.value)) })} /></label>
         <label className="field">拦截 ≥<input type="number" min={0} max={1} step={0.05} value={policy.block_threshold}
-          onChange={e => setThresholds({ ...policy, block_threshold: round(Number(e.target.value)) })} /></label>
+          onChange={e => set({ ...policy, block_threshold: round(Number(e.target.value)) })} /></label>
       </div>
       {invalid && <p className="form-error">复核阈值需小于拦截阈值</p>}
     </div>

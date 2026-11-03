@@ -243,34 +243,6 @@ def reveal_report(report_path):
     return report.as_posix()
 
 
-# ── Labels for threshold calibration ────────────────────────────────────────
-
-LABEL_WORDS = {'拦截': True, 'block': True, '1': True, '违规': True, 'true': True,
-               '通过': False, 'allow': False, '0': False, '正常': False, 'false': False}
-
-
-def read_labels(path):
-    """Read a labelled CSV (video file name or path, label) into [{'name', 'blocked'}].
-
-    Labels: 拦截/block/违规/1 → blocked; 通过/allow/正常/0 → not blocked. A header row is skipped.
-    """
-    source = Path(str(path or '')).expanduser()
-    if source.suffix.lower() != '.csv' or not source.is_file():
-        raise ValueError('请选择 .csv 标注文件')
-    labels = []
-    with source.open(encoding='utf-8-sig', newline='') as handle:
-        for row in csv.reader(handle):
-            if len(row) < 2:
-                continue
-            value = LABEL_WORDS.get(row[1].strip().lower())
-            if value is None:
-                continue  # header or unknown label
-            labels.append({'name': Path(row[0].strip().replace('\\', '/')).name, 'blocked': value})
-    if not labels:
-        raise ValueError('标注文件中没有可识别的「文件名, 标签」行')
-    return labels
-
-
 # ── Export ──────────────────────────────────────────────────────────────────
 
 def export_csv(path, rows):
