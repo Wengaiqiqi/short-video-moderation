@@ -24,6 +24,8 @@ const MODEL_PROGRESS = /^(\w+): 完成 (\d+)\/(\d+)/;
 const ASR_PROGRESS = /^语音识别 (\d+)\/(\d+)/;
 const LOG_LIMIT = 500;
 const LONG_VIDEO_SEC = 600;
+/** Worker events are applied in groups this far apart, so React renders once per group. */
+const EVENT_BATCH_MS = 100;
 export const DEFAULT_VIDEO_CONCURRENCY = 11;
 
 export function useModeration() {
@@ -260,6 +262,22 @@ export function useModeration() {
     }
   }, [addPaths, append, finish, patchVideo, preview, updateStages]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // With many videos in flight the worker sends hundreds of progress events a second; rendering after each one
+  // starves the animations. Events are queued and applied together (one render); replies to requests go straight through.
+  const handleRef = useRef(handle);
+  handleRef.current = handle;
+  const queue = useRef<WorkerEvent[]>([]);
+  const deliver = useCallback((payload: WorkerEvent) => {
+    if (payload.request_id && pending.current.has(payload.request_id)) { handleRef.current(payload); return; }
+    queue.current.push(payload);
+    if (queue.current.length > 1) return;
+    window.setTimeout(() => {
+      const events = queue.current;
+      queue.current = [];
+      events.forEach(event => handleRef.current(event));
+    }, EVENT_BATCH_MS);
+  }, []);
+
   useEffect(() => {
     let alive = true;
     const demos = cancelDemo.current;
@@ -273,7 +291,7 @@ export function useModeration() {
     }
     let dispose: (() => void) | undefined;
     async function connect() {
-      dispose = await listen<WorkerEvent>("worker-event", ({ payload }) => { if (alive) handle(payload); });
+      dispose = await listen<WorkerEvent>("worker-event", ({ payload }) => { if (alive) deliver(payload); });
       if (!alive) { dispose(); return; }
       await send({ action: "initialize" });
     }
@@ -284,7 +302,7 @@ export function useModeration() {
       append("error", "引擎", `连接失败：${String(error)}`);
     });
     return () => { alive = false; dispose?.(); };
-  }, [append, handle, preview, send]);
+  }, [append, deliver, handle, preview, send]);
 
   // Settings are saved (without keys, unless the keychain is chosen) shortly after each change.
   const loaded = useRef(false);
@@ -312,14 +330,14 @@ export function useModeration() {
     const payload: ModerationRequest & Record<string, unknown> = { ...run, video_path: item.path, job_id: item.id, ...evaluate };
     append("info", evaluate ? (evaluate.retry_failed ? "重试" : "重审") : "开始", item.name);
     if (preview) {
-      cancelDemo.current.set(item.id, evaluate ? simulateEvaluate(payload, handle) : simulateRun(payload, handle));
+      cancelDemo.current.set(item.id, evaluate ? simulateEvaluate(payload, deliver) : simulateRun(payload, deliver));
       return;
     }
     send({ action: evaluate ? "moderation_evaluate" : "moderation_start", payload }).catch(error => {
       append("error", "引擎", String(error));
       finish(item.id, { status: "failed", error: String(error), verdict: "review" });
     });
-  }, [append, finish, handle, patchVideo, preview, send]);
+  }, [append, deliver, finish, patchVideo, preview, send]);
 
   // Queue driver: keep up to `limit` videos in flight; the limit can change while the queue runs.
   useEffect(() => {

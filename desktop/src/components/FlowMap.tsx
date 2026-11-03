@@ -191,7 +191,8 @@ export default function FlowMap({ videos, stagesById, selected, onSelect, bin, o
       <path className={`rail merge s-${state.classify}`} d={geometry.paths.mergeBot} markerEnd={`url(#arrow-${state.classify})`} />
       {VERDICTS.map(v => <path key={v.id} className={`rail out v-${v.id}`} d={geometry.paths.out[v.id]} markerEnd={`url(#arrow-${v.id})`} />)}
 
-      <g>
+      {/* One glow pass for all comets: a filter per comet blurred the whole canvas once per comet per frame */}
+      <g className="comets">
         {/* Ambient light on every rail while any video is being reviewed */}
         {runningVideos.length > 0 && <>
           <Comet d={geometry.paths.inTop} tone="data" duration={1500} loop width={0.7} />

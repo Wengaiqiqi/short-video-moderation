@@ -129,8 +129,10 @@ export function fmtTime(seconds: number, precise = true) {
   const sec = precise ? rest.toFixed(1).padStart(4, "0") : String(Math.floor(rest)).padStart(2, "0");
   return `${String(minutes).padStart(2, "0")}:${sec}`;
 }
+// One formatter for every clock: toLocaleTimeString builds a new one per call.
+const CLOCK = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 export function fmtClock(at: number) {
-  return new Date(at).toLocaleTimeString("zh-CN", { hour12: false });
+  return CLOCK.format(at);
 }
 export function fmtDuration(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000));

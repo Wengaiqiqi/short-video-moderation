@@ -240,7 +240,8 @@ fieldset.plain:disabled { opacity: .55; }
 /* Flowing light: three dashes (tail, glow, white head) whose leading edges move 0 → 1.6 together */
 .comet path { fill: none; stroke-linecap: round; animation-timing-function: cubic-bezier(.45, 0, .55, 1); animation-fill-mode: both; }
 .comet-tail { stroke-dasharray: .42 3; stroke-dashoffset: .42; animation-name: comet-tail; opacity: .32; }
-.comet-halo { stroke-dasharray: .16 3; stroke-dashoffset: .16; animation-name: comet-halo; opacity: .7; filter: url(#glow); }
+.comet-halo { stroke-dasharray: .16 3; stroke-dashoffset: .16; animation-name: comet-halo; opacity: .7; }
+.comets { filter: url(#glow); }
 .comet-core { stroke-dasharray: .05 3; stroke-dashoffset: .05; animation-name: comet-core; stroke: var(--comet-core); }
 .comet.loop path { animation-timing-function: linear; }
 .comet.t-data .comet-tail, .comet.t-data .comet-halo { stroke: var(--accent); }
@@ -274,7 +275,9 @@ fieldset.plain:disabled { opacity: .55; }
 .tile.queued:hover { opacity: .9; filter: none; }
 .tile.running { box-shadow: 0 0 0 2px rgba(79, 182, 255, .85), 0 0 22px rgba(79, 182, 255, .35); z-index: 2; }
 .tile.running .tile-name { bottom: 4px; }
-.tile-scan { position: absolute; inset: 0; background: linear-gradient(transparent 0 40%, rgba(79, 182, 255, .32) 50%, transparent 60%); background-size: 100% 220%; animation: tile-scan 1.6s linear infinite; pointer-events: none; }
+.tile-scan { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* Moved with transform (composited) rather than background-position (a repaint per tile per frame) */
+.tile-scan::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 45%; background: linear-gradient(transparent, rgba(79, 182, 255, .32) 50%, transparent); animation: tile-scan 1.6s linear infinite; will-change: transform; }
 .tile-state { position: absolute; top: 4px; left: 4px; max-width: calc(100% - 8px); padding: 0 6px; border-radius: 999px; font: 9px/15px var(--mono); color: var(--accent); background: rgba(5, 6, 8, .8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .tile-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(0, 0, 0, .55); }
 .tile-progress i { display: block; height: 100%; border-radius: 0 3px 3px 0; background: var(--accent); transition: width .25s; }
@@ -284,7 +287,7 @@ fieldset.plain:disabled { opacity: .55; }
 .tile.exiting.v-review { --c: var(--review); } .tile.exiting.v-failed { --c: var(--failed); }
 .tile-verdict { position: absolute; inset: auto 0 0 0; padding: 3px 0; font: 600 11px var(--sans); text-align: center; color: var(--on-verdict); background: var(--c); }
 .tile.more { display: grid; place-content: center; text-align: center; font: 600 13px var(--mono); color: var(--muted); cursor: default; background: var(--tile-more); box-shadow: none; }
-@keyframes tile-scan { from { background-position: 0 120%; } to { background-position: 0 -120%; } }
+@keyframes tile-scan { from { transform: translateY(-100%); } to { transform: translateY(222%); } }
 @keyframes dissolve {
   0% { opacity: 1; transform: none; filter: none; }
   30% { opacity: 1; transform: scale(1.05); filter: brightness(1.25); }
